@@ -1,0 +1,9 @@
+# Rust
+/target
+
+# Tauri
+src-tauri/target
+
+# outros comuns
+node_modules
+dist
