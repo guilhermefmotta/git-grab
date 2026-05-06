@@ -37,6 +37,7 @@ const BRANCH_COLORS = [
 
 const COL_WIDTH = 16;
 const ROW_HEIGHT = 28;
+const MAX_COLS = 15;
 
 function Avatar({ name }: { name: string }) {
   const hash = Array.from(name).reduce((a, c) => a + c.charCodeAt(0), 0);
@@ -60,14 +61,15 @@ function Avatar({ name }: { name: string }) {
 }
 
 function GraphSvg({ cells, maxCol }: { cells: GraphCell[]; maxCol: number }) {
-  const width = (maxCol + 1) * COL_WIDTH + 8;
+  const clampedMax = Math.min(maxCol, MAX_COLS);
+  const width = (clampedMax + 1) * COL_WIDTH + 8;
   const cy = ROW_HEIGHT / 2;
   const commitCell = cells.find((c) => c.cell_type === "commit");
 
   return (
-    <svg width={width} height={ROW_HEIGHT} className="shrink-0">
+    <svg width={width} height={ROW_HEIGHT} className="shrink-0" style={{ overflow: "hidden" }}>
       {cells
-        .filter((c) => c.cell_type === "pass_through")
+        .filter((c) => c.cell_type === "pass_through" && c.col <= clampedMax)
         .map((c, i) => (
           <line
             key={i}
@@ -79,7 +81,7 @@ function GraphSvg({ cells, maxCol }: { cells: GraphCell[]; maxCol: number }) {
             strokeWidth={2}
           />
         ))}
-      {commitCell && (
+      {commitCell && commitCell.col <= clampedMax && (
         <>
           <line
             x1={commitCell.col * COL_WIDTH + COL_WIDTH / 2}
@@ -257,10 +259,13 @@ export function CommitGraph() {
     );
   }, [commits, searchQuery]);
 
-  const maxCol = commits.reduce((max, c) => {
-    const m = c.graph_columns.reduce((cm, cell) => Math.max(cm, cell.col), 0);
-    return Math.max(max, m);
-  }, 0);
+  const maxCol = Math.min(
+    commits.reduce((max, c) => {
+      const m = c.graph_columns.reduce((cm, cell) => Math.max(cm, cell.col), 0);
+      return Math.max(max, m);
+    }, 0),
+    MAX_COLS
+  );
 
   const fullRefresh = useCallback(() => {
     if (!activeRepo) return;
