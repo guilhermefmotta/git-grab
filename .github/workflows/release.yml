@@ -47,6 +47,10 @@ jobs:
         with:
           workspaces: "./src-tauri -> target"
 
+      - name: Setup MSVC dev tools (Windows)
+        if: matrix.platform == 'windows-latest'
+        uses: ilammy/msvc-dev-cmd@v1
+
       - name: Install Linux system dependencies
         if: matrix.platform == 'ubuntu-22.04'
         run: |
