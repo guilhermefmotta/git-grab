@@ -16,6 +16,7 @@ pub fn run() {
             commands::repo::write_file_content,
             commands::repo::open_commit_window,
             commands::repo::open_file_diff_window,
+            commands::repo::open_conflict_window,
             commands::status::get_status,
             commands::status::stage_file,
             commands::status::unstage_file,

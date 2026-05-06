@@ -15,7 +15,6 @@ import {
   ContextMenuTrigger,
 } from "@/components/ui/context-menu";
 import { DiffViewer } from "./DiffViewer";
-import { ConflictViewer } from "./ConflictViewer";
 import type { FileStatus } from "@/lib/types";
 
 function FileRow({
@@ -162,7 +161,6 @@ export function WorkingTree() {
   const [commitMsg, setCommitMsg] = useState("");
   const [committing, setCommitting] = useState(false);
   const [confirmDiscard, setConfirmDiscard] = useState<string | null>(null);
-  const [conflictFile, setConflictFile] = useState<string | null>(null);
 
   const selectFile = async (path: string, isStaged: boolean) => {
     if (!activeRepo) return;
@@ -213,6 +211,18 @@ export function WorkingTree() {
     }
   };
 
+  const openConflictWindow = async (filePath: string) => {
+    if (!activeRepo) return;
+    const key = filePath.replace(/[^a-zA-Z0-9_-]/g, "-");
+    const meta = { repoPath: activeRepo.path, filePath };
+    localStorage.setItem(`git_crab_conflict_${key}`, JSON.stringify(meta));
+    try {
+      await git.openConflictWindow(key, `Resolve: ${filePath}`);
+    } catch (e) {
+      toast.error(String(e));
+    }
+  };
+
   const handleIgnoreFile = async (filePath: string) => {
     if (!activeRepo) return;
     try {
@@ -222,21 +232,6 @@ export function WorkingTree() {
       toast.error(String(e));
     }
   };
-
-  // Conflict view mode — takes over the full panel
-  if (conflictFile && activeRepo) {
-    return (
-      <ConflictViewer
-        repoPath={activeRepo.path}
-        filePath={conflictFile}
-        onBack={() => setConflictFile(null)}
-        onResolved={() => {
-          setConflictFile(null);
-          refresh();
-        }}
-      />
-    );
-  }
 
   const hasConflicts = conflicted.length > 0;
 
@@ -279,7 +274,8 @@ export function WorkingTree() {
                 icon={AlertTriangle}
                 iconClass="text-destructive"
                 selected={selectedFilePath === f.path}
-                onClick={() => setConflictFile(f.path)}
+                onClick={() => openConflictWindow(f.path)}
+                onDoubleClick={() => openConflictWindow(f.path)}
                 onOpenEditor={() => handleOpenEditor(f.path)}
               />
             ))}

@@ -185,6 +185,35 @@ pub async fn open_file_diff_window(
 }
 
 #[tauri::command]
+pub async fn open_conflict_window(
+    app: tauri::AppHandle,
+    key: String,
+    title: String,
+) -> Result<(), String> {
+    let label = format!("conflict-{}", key);
+
+    if let Some(win) = app.get_webview_window(&label) {
+        win.set_focus().ok();
+        return Ok(());
+    }
+
+    tauri::WebviewWindowBuilder::new(
+        &app,
+        &label,
+        tauri::WebviewUrl::App(
+            std::path::PathBuf::from(format!("index.html?view=conflict&key={}", key)),
+        ),
+    )
+    .title(title)
+    .inner_size(1600.0, 900.0)
+    .center()
+    .build()
+    .map_err(|e| e.to_string())?;
+
+    Ok(())
+}
+
+#[tauri::command]
 pub async fn get_file_content(repo_path: String, file_path: String) -> Result<String, String> {
     let full = std::path::Path::new(&repo_path).join(&file_path);
     std::fs::read_to_string(&full).map_err(|e| e.to_string())
