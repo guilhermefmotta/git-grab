@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   AlertTriangle, CheckCircle, ChevronDown, ChevronUp,
-  Edit3, Loader2, X, ArrowLeftRight,
+  ChevronsRight, ChevronsLeft, Edit3, Loader2, X, ArrowLeftRight,
 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -134,63 +134,45 @@ function buildResultContent(
 
 // ── Primitives ────────────────────────────────────────────────────────────────
 
+const GRID = "grid grid-cols-[1fr_28px_1fr_28px_1fr]";
+
 function GutterNum({ n }: { n: number | "" }) {
   return (
-    <span className="shrink-0 w-10 text-right pr-2 text-muted-foreground/35 select-none text-[10px] leading-5 tabular-nums">
+    <span className="shrink-0 w-9 text-right pr-1.5 text-muted-foreground/30 select-none text-[10px] leading-5 tabular-nums">
       {n}
     </span>
   );
 }
 
+// Context row: same line shown in all 3 panels, thin gutter dividers
 function CtxRow({ line, lineNum }: { line: string; lineNum: number }) {
   return (
-    <div className="grid grid-cols-3 border-b border-border/5 hover:bg-accent/5 min-w-0">
-      {[0, 1, 2].map(col => (
-        <div key={col} className={cn("flex min-w-0", col < 2 && "border-r border-border/15")}>
-          <GutterNum n={lineNum} />
-          <span className="flex-1 whitespace-pre text-[11px] leading-5 pr-2 overflow-hidden text-foreground/75">
-            {line || " "}
-          </span>
-        </div>
-      ))}
+    <div className={cn(GRID, "border-b border-border/5 hover:bg-accent/5 min-w-0")}>
+      <div className="flex min-w-0">
+        <GutterNum n={lineNum} />
+        <span className="flex-1 whitespace-pre text-[11px] leading-5 pr-2 overflow-hidden text-foreground/70">{line || " "}</span>
+      </div>
+      {/* left gutter divider */}
+      <div className="border-x border-border/10 bg-card/30" />
+      <div className="flex min-w-0">
+        <GutterNum n={lineNum} />
+        <span className="flex-1 whitespace-pre text-[11px] leading-5 pr-2 overflow-hidden text-foreground/70">{line || " "}</span>
+      </div>
+      {/* right gutter divider */}
+      <div className="border-x border-border/10 bg-card/30" />
+      <div className="flex min-w-0">
+        <GutterNum n={lineNum} />
+        <span className="flex-1 whitespace-pre text-[11px] leading-5 pr-2 overflow-hidden text-foreground/70">{line || " "}</span>
+      </div>
     </div>
   );
 }
 
-function ActionBtn({
-  label, variant, onClick,
-}: {
-  label: string;
-  variant: "green" | "blue" | "purple" | "ghost";
-  onClick: React.MouseEventHandler<HTMLButtonElement>;
-}) {
-  const cls: Record<string, string> = {
-    green: "bg-green-900/60 border-green-700/50 text-green-300 hover:bg-green-800/80",
-    blue: "bg-blue-900/60 border-blue-700/50 text-blue-300 hover:bg-blue-800/80",
-    purple: "bg-purple-900/50 border-purple-700/40 text-purple-300 hover:bg-purple-800/70",
-    ghost: "bg-transparent border-border text-muted-foreground hover:text-foreground hover:bg-accent/30",
-  };
-  return (
-    <button
-      onClick={onClick}
-      className={cn("px-2 py-0.5 text-[10px] rounded border transition-colors shrink-0", cls[variant])}
-    >
-      {label}
-    </button>
-  );
-}
-
-// ── Conflict Block ────────────────────────────────────────────────────────────
+// ── Conflict Block ─────────────────────────────────────────────────────────────
 
 function ConflictBlock({
-  section,
-  resolution,
-  customDraft,
-  isActive,
-  onActivate,
-  onResolve,
-  onClear,
-  onCustomChange,
+  section, resolution, customDraft, isActive,
+  onActivate, onResolve, onClear, onCustomChange,
 }: {
   section: ConflictSection;
   resolution: ResolutionEntry | undefined;
@@ -201,84 +183,103 @@ function ConflictBlock({
   onClear: () => void;
   onCustomChange: (text: string) => void;
 }) {
-  const maxSides = Math.max(section.ours.length, section.theirs.length, 1);
+  const maxRows = Math.max(section.ours.length, section.theirs.length, 1);
 
   const resultLines: string[] = resolution
     ? resolution.kind === "custom" && resolution.customText !== undefined
       ? resolution.customText.split("\n")
-      : resolution.kind === "ours"
-      ? section.ours
-      : resolution.kind === "theirs"
-      ? section.theirs
+      : resolution.kind === "ours"   ? section.ours
+      : resolution.kind === "theirs" ? section.theirs
       : [...section.ours, ...section.theirs]
     : [];
 
-  const maxRows = Math.max(maxSides, resultLines.length, 1);
-
-  const resColor = resolution?.kind === "ours"
-    ? "bg-green-900/20"
-    : resolution?.kind === "theirs"
-    ? "bg-blue-900/20"
-    : resolution?.kind === "both"
-    ? "bg-purple-900/20"
-    : "bg-muted/8";
-
+  const maxResult = Math.max(maxRows, resultLines.length, 1);
   const isCustom = resolution?.kind === "custom";
 
-  return (
-    <div
-      className={cn(
-        "border-y transition-colors",
-        isActive
-          ? "border-yellow-500/60 shadow-[0_0_0_1px_rgba(234,179,8,0.2)]"
-          : "border-yellow-500/15",
-      )}
-      onClick={onActivate}
-    >
-      {/* ── Header ── */}
-      <div
-        className={cn(
-          "flex items-center gap-2 px-3 py-1 flex-wrap border-b",
-          isActive ? "bg-yellow-500/12 border-yellow-500/30" : "bg-yellow-500/5 border-yellow-500/10",
-        )}
-      >
-        <AlertTriangle size={11} className="text-yellow-400 shrink-0" />
-        <span className="text-[10px] font-bold text-yellow-300 uppercase tracking-wider shrink-0">
-          Conflict {section.idx + 1}
-        </span>
-        <span className="text-[10px] text-green-400/60 font-mono truncate max-w-[110px]">
-          ← {section.oursLabel}
-        </span>
+  const borderCls = isActive
+    ? "border-yellow-500/60 shadow-[0_0_0_1px_rgba(234,179,8,0.15)]"
+    : "border-yellow-500/15";
 
-        {!resolution ? (
-          <div className="flex items-center gap-1 ml-auto flex-wrap">
-            <ActionBtn label="Accept Ours" variant="green" onClick={e => { e.stopPropagation(); onResolve("ours"); }} />
-            <ActionBtn label="Accept Both" variant="purple" onClick={e => { e.stopPropagation(); onResolve("both"); }} />
-            <ActionBtn label="Accept Theirs" variant="blue" onClick={e => { e.stopPropagation(); onResolve("theirs"); }} />
-          </div>
-        ) : (
-          <div className="flex items-center gap-2 ml-auto">
-            <CheckCircle size={10} className="text-green-400" />
-            <span className="text-[10px] text-green-300">
-              {resolution.kind === "ours" ? "Ours" : resolution.kind === "theirs" ? "Theirs" : resolution.kind === "both" ? "Both" : "Custom"}
-            </span>
-            <button onClick={e => { (e as unknown as Event).stopPropagation?.(); onClear(); }} className="text-muted-foreground hover:text-foreground transition-colors" title="Reset">
+  return (
+    <div className={cn("border-y transition-colors", borderCls)} onClick={onActivate}>
+
+      {/* ── Conflict header row ── */}
+      <div className={cn(
+        GRID, "border-b text-[10px]",
+        isActive ? "bg-yellow-500/10 border-yellow-500/25" : "bg-yellow-500/4 border-yellow-500/8",
+      )}>
+        {/* Left label */}
+        <div className="flex items-center gap-1.5 px-2 py-1 min-w-0">
+          <AlertTriangle size={10} className="text-yellow-400 shrink-0" />
+          <span className="font-bold text-yellow-300 shrink-0">Conflict {section.idx + 1}</span>
+          <span className="text-green-400/60 font-mono truncate">{section.oursLabel}</span>
+        </div>
+
+        {/* Left gutter — >> arrow to push ours to result */}
+        <div className={cn("flex flex-col items-center justify-center border-x gap-0.5",
+          isActive ? "border-yellow-500/25" : "border-yellow-500/8")}>
+          {!resolution ? (
+            <button
+              onClick={e => { e.stopPropagation(); onResolve("ours"); }}
+              title="Accept ours →"
+              className="text-green-400 hover:text-green-200 hover:bg-green-900/40 rounded p-0.5 transition-colors"
+            >
+              <ChevronsRight size={12} />
+            </button>
+          ) : (
+            <button onClick={e => { e.stopPropagation(); onClear(); }} title="Clear"
+              className="text-muted-foreground/40 hover:text-muted-foreground transition-colors">
               <X size={10} />
             </button>
-          </div>
-        )}
+          )}
+        </div>
 
-        <span className="text-[10px] text-blue-400/60 font-mono truncate max-w-[110px]">
-          {section.theirsLabel} →
-        </span>
+        {/* Middle — resolution status */}
+        <div className="flex items-center justify-center gap-1 px-1 py-1">
+          {resolution ? (
+            <>
+              <CheckCircle size={10} className="text-green-400 shrink-0" />
+              <span className="text-green-300 capitalize">{resolution.kind}</span>
+              <button onClick={e => { e.stopPropagation(); onClear(); }}
+                className="ml-1 text-muted-foreground/40 hover:text-muted-foreground transition-colors">
+                <X size={9} />
+              </button>
+            </>
+          ) : (
+            <span className="text-muted-foreground/30 italic text-[9px]">← choose →</span>
+          )}
+        </div>
+
+        {/* Right gutter — << arrow to push theirs to result */}
+        <div className={cn("flex flex-col items-center justify-center border-x gap-0.5",
+          isActive ? "border-yellow-500/25" : "border-yellow-500/8")}>
+          {!resolution ? (
+            <button
+              onClick={e => { e.stopPropagation(); onResolve("theirs"); }}
+              title="← Accept theirs"
+              className="text-blue-400 hover:text-blue-200 hover:bg-blue-900/40 rounded p-0.5 transition-colors"
+            >
+              <ChevronsLeft size={12} />
+            </button>
+          ) : (
+            <button onClick={e => { e.stopPropagation(); onClear(); }} title="Clear"
+              className="text-muted-foreground/40 hover:text-muted-foreground transition-colors">
+              <X size={10} />
+            </button>
+          )}
+        </div>
+
+        {/* Right label */}
+        <div className="flex items-center justify-end gap-1 px-2 py-1 min-w-0">
+          <span className="text-blue-400/60 font-mono truncate">{section.theirsLabel}</span>
+        </div>
       </div>
 
-      {/* ── Lines ── */}
+      {/* ── Content rows ── */}
       {isCustom ? (
-        // Custom edit: full-width textarea in middle, read-only sides
-        <div className="grid grid-cols-3">
-          {/* Ours (left) */}
-          <div className="border-r border-border/20 bg-green-950/20">
+        <div className={cn(GRID)}>
+          {/* Ours readonly */}
+          <div className="bg-green-950/20 border-green-500/20">
             {section.ours.map((line, j) => (
               <div key={j} className="flex border-b border-border/5 border-l-2 border-l-green-500/50">
                 <GutterNum n={j + 1} />
@@ -286,8 +287,10 @@ function ConflictBlock({
               </div>
             ))}
           </div>
-          {/* Custom editor (middle) */}
-          <div className="border-r border-border/20 bg-muted/5 relative">
+          {/* left gutter */}
+          <div className="border-x border-yellow-500/8 bg-yellow-950/5" />
+          {/* Custom textarea */}
+          <div className="border-x border-border/20 bg-muted/5">
             <textarea
               className="w-full bg-transparent text-foreground text-[11px] leading-5 font-mono resize-none outline-none px-2 py-0 border-0 block"
               value={customDraft ?? section.ours.join("\n")}
@@ -297,7 +300,9 @@ function ConflictBlock({
               onChange={e => { e.stopPropagation(); onCustomChange(e.target.value); }}
             />
           </div>
-          {/* Theirs (right) */}
+          {/* right gutter */}
+          <div className="border-x border-yellow-500/8 bg-yellow-950/5" />
+          {/* Theirs readonly */}
           <div className="bg-blue-950/20">
             {section.theirs.map((line, j) => (
               <div key={j} className="flex border-b border-border/5 border-l-2 border-l-blue-500/50">
@@ -308,48 +313,54 @@ function ConflictBlock({
           </div>
         </div>
       ) : (
-        Array.from({ length: maxRows }, (_, j) => {
+        Array.from({ length: maxResult }, (_, j) => {
           const oLine = section.ours[j];
           const tLine = section.theirs[j];
           const rLine = resultLines[j];
           return (
-            <div key={j} className="grid grid-cols-3 border-b border-border/5">
-              {/* Left – ours */}
+            <div key={j} className={cn(GRID, "border-b border-border/5")}>
+              {/* Ours */}
               <div className={cn(
-                "flex min-w-0 border-r border-border/20",
-                oLine !== undefined ? "bg-green-900/30 border-l-2 border-l-green-500/55" : "bg-muted/4",
+                "flex min-w-0",
+                oLine !== undefined ? "bg-green-900/25 border-l-2 border-l-green-500/50" : "bg-muted/3",
               )}>
                 <GutterNum n={oLine !== undefined ? j + 1 : ""} />
-                <span className={cn(
-                  "flex-1 whitespace-pre text-[11px] leading-5 pr-2 overflow-hidden",
-                  oLine !== undefined ? "text-green-50/90" : "",
-                )}>
+                <span className={cn("flex-1 whitespace-pre text-[11px] leading-5 pr-2 overflow-hidden",
+                  oLine !== undefined ? "text-green-50/85" : "")}>
                   {oLine ?? " "}
                 </span>
               </div>
-              {/* Middle – result */}
-              <div className={cn("flex min-w-0 border-r border-border/20", resColor)}>
+
+              {/* Left gutter (empty in content rows) */}
+              <div className="border-x border-yellow-500/8 bg-yellow-950/4" />
+
+              {/* Result */}
+              <div className={cn("flex min-w-0",
+                rLine !== undefined
+                  ? resolution?.kind === "ours"   ? "bg-green-900/15"
+                  : resolution?.kind === "theirs" ? "bg-blue-900/15"
+                  : "bg-purple-900/15"
+                  : "bg-muted/4",
+              )}>
                 <GutterNum n={rLine !== undefined ? j + 1 : ""} />
                 {rLine !== undefined ? (
-                  <span className="flex-1 whitespace-pre text-[11px] leading-5 text-foreground pr-2 overflow-hidden">
-                    {rLine || " "}
-                  </span>
+                  <span className="flex-1 whitespace-pre text-[11px] leading-5 text-foreground pr-2 overflow-hidden">{rLine || " "}</span>
                 ) : (
-                  <span className="flex-1 text-[10px] text-muted-foreground/25 italic leading-5 select-none">
-                    ← choose →
-                  </span>
+                  <span className="flex-1 text-[9px] text-muted-foreground/20 italic leading-5 select-none pl-0.5">← choose →</span>
                 )}
               </div>
-              {/* Right – theirs */}
+
+              {/* Right gutter (empty in content rows) */}
+              <div className="border-x border-yellow-500/8 bg-yellow-950/4" />
+
+              {/* Theirs */}
               <div className={cn(
                 "flex min-w-0",
-                tLine !== undefined ? "bg-blue-900/30 border-l-2 border-l-blue-500/55" : "bg-muted/4",
+                tLine !== undefined ? "bg-blue-900/25 border-l-2 border-l-blue-500/50" : "bg-muted/3",
               )}>
                 <GutterNum n={tLine !== undefined ? j + 1 : ""} />
-                <span className={cn(
-                  "flex-1 whitespace-pre text-[11px] leading-5 pr-2 overflow-hidden",
-                  tLine !== undefined ? "text-blue-50/90" : "",
-                )}>
+                <span className={cn("flex-1 whitespace-pre text-[11px] leading-5 pr-2 overflow-hidden",
+                  tLine !== undefined ? "text-blue-50/85" : "")}>
                   {tLine ?? " "}
                 </span>
               </div>
@@ -358,19 +369,24 @@ function ConflictBlock({
         })
       )}
 
-      {/* ── Manual edit toggle ── */}
+      {/* Edit manually toggle */}
       {!resolution && (
-        <div className="flex items-center justify-center py-1 bg-muted/4 border-t border-border/10">
-          <button
-            onClick={e => {
-              e.stopPropagation();
-              const draft = customDraft ?? section.ours.join("\n");
-              onResolve("custom", draft);
-            }}
-            className="flex items-center gap-1 text-[10px] text-muted-foreground/60 hover:text-muted-foreground transition-colors"
-          >
-            <Edit3 size={9} /> Edit manually
-          </button>
+        <div className={cn(GRID, "border-t border-border/8 bg-muted/3")}>
+          <div />
+          <div className="border-x border-yellow-500/8" />
+          <div className="flex items-center justify-center py-0.5">
+            <button
+              onClick={e => {
+                e.stopPropagation();
+                onResolve("custom", customDraft ?? section.ours.join("\n"));
+              }}
+              className="flex items-center gap-1 text-[9px] text-muted-foreground/50 hover:text-muted-foreground transition-colors"
+            >
+              <Edit3 size={8} /> Edit manually
+            </button>
+          </div>
+          <div className="border-x border-yellow-500/8" />
+          <div />
         </div>
       )}
     </div>
@@ -421,11 +437,10 @@ export function ConflictViewer({ repoPath, filePath, onResolved }: Props) {
     conflictEls.current.get(clamped)?.scrollIntoView({ behavior: "smooth", block: "center" });
   }, [parsed]);
 
-  // Keyboard nav
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && e.key === "ArrowDown") { e.preventDefault(); goTo(activeIdx + 1); }
-      if ((e.ctrlKey || e.metaKey) && e.key === "ArrowUp") { e.preventDefault(); goTo(activeIdx - 1); }
+      if ((e.ctrlKey || e.metaKey) && e.key === "ArrowUp")   { e.preventDefault(); goTo(activeIdx - 1); }
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
@@ -452,7 +467,6 @@ export function ConflictViewer({ repoPath, filePath, onResolved }: Props) {
   const allResolved = totalCount > 0 && resolvedCount === totalCount;
   const segments = parsed ? buildSegments(parsed) : [];
 
-  // ── Loading / error ──
   if (loading) return (
     <div className="flex items-center justify-center h-full gap-2">
       <Loader2 size={14} className="animate-spin text-muted-foreground" />
@@ -474,58 +488,53 @@ export function ConflictViewer({ repoPath, filePath, onResolved }: Props) {
 
   return (
     <div className="flex flex-col h-full overflow-hidden font-mono">
+
       {/* ── Toolbar ── */}
       <div className="flex items-center gap-2 px-4 py-2 border-b border-border bg-card shrink-0 flex-wrap">
         <ArrowLeftRight size={12} className="text-yellow-400 shrink-0" />
         <span className="text-xs text-foreground/70 truncate flex-1 min-w-0">{filePath}</span>
 
-        {/* Bulk accept */}
+        {/* Bulk accept (shown when > 1 conflict) */}
         {totalCount > 1 && !allResolved && (
           <div className="flex items-center gap-1 shrink-0">
             <button
               onClick={() => {
                 const m = new Map<number, ResolutionEntry>();
-                parsed!.sections.forEach(s => m.set(s.idx, { kind: "ours" }));
+                parsed.sections.forEach(s => m.set(s.idx, { kind: "ours" }));
                 setResolutions(m);
               }}
-              className="px-2 py-0.5 text-[10px] rounded border bg-green-900/40 border-green-700/40 text-green-300 hover:bg-green-800/60 transition-colors"
-              title="Accept all ours for every conflict"
+              className="flex items-center gap-0.5 px-2 py-0.5 text-[10px] rounded border bg-green-900/40 border-green-700/40 text-green-300 hover:bg-green-800/60 transition-colors"
+              title="Accept all ours"
             >
-              All Ours
+              <ChevronsRight size={10} /> All Ours
             </button>
             <button
               onClick={() => {
                 const m = new Map<number, ResolutionEntry>();
-                parsed!.sections.forEach(s => m.set(s.idx, { kind: "theirs" }));
+                parsed.sections.forEach(s => m.set(s.idx, { kind: "theirs" }));
                 setResolutions(m);
               }}
-              className="px-2 py-0.5 text-[10px] rounded border bg-blue-900/40 border-blue-700/40 text-blue-300 hover:bg-blue-800/60 transition-colors"
-              title="Accept all theirs for every conflict"
+              className="flex items-center gap-0.5 px-2 py-0.5 text-[10px] rounded border bg-blue-900/40 border-blue-700/40 text-blue-300 hover:bg-blue-800/60 transition-colors"
+              title="Accept all theirs"
             >
-              All Theirs
+              <ChevronsLeft size={10} /> All Theirs
             </button>
           </div>
         )}
 
         {/* Navigation */}
         <div className="flex items-center gap-0.5 shrink-0">
-          <button
-            onClick={() => goTo(activeIdx - 1)}
-            disabled={activeIdx === 0}
+          <button onClick={() => goTo(activeIdx - 1)} disabled={activeIdx === 0}
             title="Previous conflict (Ctrl+↑)"
-            className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-accent/30 disabled:opacity-30 transition-colors"
-          >
+            className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-accent/30 disabled:opacity-30 transition-colors">
             <ChevronUp size={12} />
           </button>
           <span className="text-[10px] text-muted-foreground tabular-nums px-1 min-w-[72px] text-center">
             {resolvedCount}/{totalCount} resolved
           </span>
-          <button
-            onClick={() => goTo(activeIdx + 1)}
-            disabled={activeIdx >= totalCount - 1}
+          <button onClick={() => goTo(activeIdx + 1)} disabled={activeIdx >= totalCount - 1}
             title="Next conflict (Ctrl+↓)"
-            className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-accent/30 disabled:opacity-30 transition-colors"
-          >
+            className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-accent/30 disabled:opacity-30 transition-colors">
             <ChevronDown size={12} />
           </button>
         </div>
@@ -542,9 +551,11 @@ export function ConflictViewer({ repoPath, filePath, onResolved }: Props) {
       </div>
 
       {/* ── Column headers ── */}
-      <div className="grid grid-cols-3 shrink-0 bg-card border-b border-border text-[10px] font-semibold uppercase tracking-wider">
-        <div className="px-3 py-1.5 text-green-400 border-r border-border">Local (Ours)</div>
-        <div className="px-3 py-1.5 text-muted-foreground border-r border-border">Result</div>
+      <div className={cn(GRID, "shrink-0 bg-card border-b border-border text-[10px] font-semibold uppercase tracking-wider")}>
+        <div className="px-3 py-1.5 text-green-400">Local (Ours)</div>
+        <div className="border-x border-border bg-card/50" />
+        <div className="px-3 py-1.5 text-muted-foreground">Result</div>
+        <div className="border-x border-border bg-card/50" />
         <div className="px-3 py-1.5 text-blue-400">Incoming (Theirs)</div>
       </div>
 
@@ -587,7 +598,6 @@ export function ConflictViewer({ repoPath, filePath, onResolved }: Props) {
 
       {/* ── Footer minimap ── */}
       <div className="flex items-center gap-2 px-4 py-1.5 border-t border-border bg-card shrink-0">
-        {/* Dot indicators per conflict */}
         <div className="flex gap-1 items-center">
           {parsed.sections.map(s => (
             <button
@@ -596,10 +606,8 @@ export function ConflictViewer({ repoPath, filePath, onResolved }: Props) {
               title={`Conflict ${s.idx + 1}`}
               className={cn(
                 "w-2 h-2 rounded-full transition-all",
-                resolutions.has(s.idx)
-                  ? "bg-green-500"
-                  : s.idx === activeIdx
-                  ? "bg-yellow-400 scale-125"
+                resolutions.has(s.idx) ? "bg-green-500"
+                  : s.idx === activeIdx ? "bg-yellow-400 scale-125"
                   : "bg-yellow-700/60 hover:bg-yellow-500/80",
               )}
             />
