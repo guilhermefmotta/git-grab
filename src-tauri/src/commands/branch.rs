@@ -311,15 +311,26 @@ fn collect_index_conflicts(repo: &Repository) -> Result<Vec<String>, String> {
             .unwrap_or_default();
         let theirs = entry.their_oid.map(|oid| read_blob(repo, oid)).unwrap_or_default();
 
-        // diffy 3-way merge with Merge style (no "||||||| ancestor" lines):
-        // produces partial markers — only DIFFERING lines get <<<<<<< blocks;
-        // all unchanged context is plain text visible in all three viewer panels.
-        let mut merge_opts = diffy::MergeOptions::new();
-        merge_opts.set_conflict_style(diffy::ConflictStyle::Merge);
+        // If either side already has conflict markers (e.g., stash captured a file
+        // that was itself in a conflicted state), diffy would produce nested markers
+        // that our parser cannot handle. Fall back to whole-blob format in that case.
+        let has_nested = ours.contains("<<<<<<<") || theirs.contains("<<<<<<<");
 
-        let content = match merge_opts.merge(&ancestor, &ours, &theirs) {
-            Ok(clean) => clean,
-            Err(conflict_text) => conflict_text,
+        let content = if has_nested {
+            // Whole-blob: show full ours vs full theirs so the parser sees exactly
+            // one clean conflict block. User picks Accept Ours (HEAD) or Accept Theirs.
+            let ours_nl = if ours.ends_with('\n') { "" } else { "\n" };
+            let theirs_nl = if theirs.ends_with('\n') { "" } else { "\n" };
+            format!("<<<<<<< {our_label}\n{ours}{ours_nl}=======\n{theirs}{theirs_nl}>>>>>>> incoming\n")
+        } else {
+            // diffy 3-way merge: partial markers — only DIFFERING lines get <<<<<<< blocks;
+            // unchanged context stays plain text and appears in all three panels.
+            let mut merge_opts = diffy::MergeOptions::new();
+            merge_opts.set_conflict_style(diffy::ConflictStyle::Merge);
+            match merge_opts.merge(&ancestor, &ours, &theirs) {
+                Ok(clean) => clean,
+                Err(conflict_text) => conflict_text,
+            }
         };
 
         if let Some(ref p) = fp {
