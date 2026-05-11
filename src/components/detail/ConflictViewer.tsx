@@ -479,6 +479,34 @@ export function ConflictViewer({ repoPath, filePath, onResolved }: Props) {
         <ArrowLeftRight size={12} className="text-yellow-400 shrink-0" />
         <span className="text-xs text-foreground/70 truncate flex-1 min-w-0">{filePath}</span>
 
+        {/* Bulk accept */}
+        {totalCount > 1 && !allResolved && (
+          <div className="flex items-center gap-1 shrink-0">
+            <button
+              onClick={() => {
+                const m = new Map<number, ResolutionEntry>();
+                parsed!.sections.forEach(s => m.set(s.idx, { kind: "ours" }));
+                setResolutions(m);
+              }}
+              className="px-2 py-0.5 text-[10px] rounded border bg-green-900/40 border-green-700/40 text-green-300 hover:bg-green-800/60 transition-colors"
+              title="Accept all ours for every conflict"
+            >
+              All Ours
+            </button>
+            <button
+              onClick={() => {
+                const m = new Map<number, ResolutionEntry>();
+                parsed!.sections.forEach(s => m.set(s.idx, { kind: "theirs" }));
+                setResolutions(m);
+              }}
+              className="px-2 py-0.5 text-[10px] rounded border bg-blue-900/40 border-blue-700/40 text-blue-300 hover:bg-blue-800/60 transition-colors"
+              title="Accept all theirs for every conflict"
+            >
+              All Theirs
+            </button>
+          </div>
+        )}
+
         {/* Navigation */}
         <div className="flex items-center gap-0.5 shrink-0">
           <button
