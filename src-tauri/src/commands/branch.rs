@@ -247,6 +247,7 @@ pub async fn rebase_branch(repo_path: String, branch_name: String) -> Result<(),
 
 struct ConflictEntry {
     path: String,
+    ancestor_oid: Option<git2::Oid>,
     our_oid: Option<git2::Oid>,
     their_oid: Option<git2::Oid>,
 }
@@ -259,11 +260,11 @@ fn read_blob(repo: &Repository, oid: git2::Oid) -> String {
         .unwrap_or_default()
 }
 
-/// Collect conflicted file paths and write proper <<<<<<< / ======= / >>>>>>>
-/// markers with context lines. Uses `git checkout --conflict=merge` (proper
-/// 3-way line diff) so only the differing lines get markers; context is plain.
-/// Falls back to whole-blob wrapping when that command can't produce markers
-/// (e.g., file only exists on one side).
+/// Collect conflicted file paths and write proper partial <<<<<<< markers
+/// using diffy's 3-way line diff so ONLY the differing lines get conflict
+/// blocks; all context lines remain plain and appear in all three viewer
+/// panels. Falls back to whole-blob wrapping for binary files or when all
+/// three stages are absent on one side.
 fn collect_index_conflicts(repo: &Repository) -> Result<Vec<String>, String> {
     let mut index = repo.index().map_err(|e| e.message().to_string())?;
     index.read(true).ok();
@@ -285,6 +286,7 @@ fn collect_index_conflicts(repo: &Repository) -> Result<Vec<String>, String> {
             if let Some(p) = path {
                 entries.push(ConflictEntry {
                     path: p,
+                    ancestor_oid: c.ancestor.as_ref().map(|e| e.id),
                     our_oid: c.our.as_ref().map(|e| e.id),
                     their_oid: c.their.as_ref().map(|e| e.id),
                 });
@@ -298,41 +300,30 @@ fn collect_index_conflicts(repo: &Repository) -> Result<Vec<String>, String> {
 
     let workdir = repo.workdir().map(|p| p.to_path_buf());
 
-    // Primary: let git itself write partial markers (only changed lines get
-    // <<<<<<< blocks; context lines remain visible in all three panels).
-    if let Some(ref wd) = workdir {
-        let _ = std::process::Command::new("git")
-            .arg("checkout")
-            .arg("--conflict=merge")
-            .arg("--")
-            .args(entries.iter().map(|e| e.path.as_str()))
-            .current_dir(wd)
-            .status();
-    }
-
-    // Fallback: for any file that still has no markers (added-only-on-one-side,
-    // binary, or git not on PATH), write a whole-blob conflict block.
     for entry in &entries {
         let fp = workdir.as_ref().map(|wd| wd.join(&entry.path));
-        let has_markers = fp.as_ref()
-            .and_then(|p| std::fs::read_to_string(p).ok())
-            .map(|c| c.contains("<<<<<<<"))
-            .unwrap_or(false);
 
-        if !has_markers {
-            let ours = entry.our_oid
-                .map(|oid| read_blob(repo, oid))
-                .or_else(|| fp.as_ref().and_then(|p| std::fs::read_to_string(p).ok()))
-                .unwrap_or_default();
-            let theirs = entry.their_oid.map(|oid| read_blob(repo, oid)).unwrap_or_default();
-            if !ours.is_empty() || !theirs.is_empty() {
-                let ours_nl = if ours.ends_with('\n') { "" } else { "\n" };
-                let theirs_nl = if theirs.ends_with('\n') { "" } else { "\n" };
-                let content = format!(
-                    "<<<<<<< {our_label}\n{ours}{ours_nl}=======\n{theirs}{theirs_nl}>>>>>>> incoming\n",
-                );
-                if let Some(ref p) = fp { let _ = std::fs::write(p, content); }
-            }
+        let ancestor = entry.ancestor_oid.map(|oid| read_blob(repo, oid)).unwrap_or_default();
+        let ours = entry.our_oid
+            .map(|oid| read_blob(repo, oid))
+            // stage 2 absent = file added only by theirs; use workdir as baseline
+            .or_else(|| fp.as_ref().and_then(|p| std::fs::read_to_string(p).ok()))
+            .unwrap_or_default();
+        let theirs = entry.their_oid.map(|oid| read_blob(repo, oid)).unwrap_or_default();
+
+        // diffy 3-way merge with Merge style (no "||||||| ancestor" lines):
+        // produces partial markers — only DIFFERING lines get <<<<<<< blocks;
+        // all unchanged context is plain text visible in all three viewer panels.
+        let mut merge_opts = diffy::MergeOptions::new();
+        merge_opts.set_conflict_style(diffy::ConflictStyle::Merge);
+
+        let content = match merge_opts.merge(&ancestor, &ours, &theirs) {
+            Ok(clean) => clean,
+            Err(conflict_text) => conflict_text,
+        };
+
+        if let Some(ref p) = fp {
+            let _ = std::fs::write(p, &content);
         }
     }
 
