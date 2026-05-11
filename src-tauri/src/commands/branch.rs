@@ -1,5 +1,5 @@
 use crate::git::types::BranchInfo;
-use git2::{BranchType, Repository, Signature, StashApplyOptions};
+use git2::{BranchType, Repository, Signature, StashApplyOptions, StashFlags};
 
 #[tauri::command]
 pub async fn get_branches(repo_path: String) -> Result<Vec<BranchInfo>, String> {
@@ -293,7 +293,14 @@ fn collect_index_conflicts(repo: &Repository) -> Result<Vec<String>, String> {
     let workdir = repo.workdir().map(|p| p.to_path_buf());
 
     for entry in &entries {
-        let ours = entry.our_oid.map(|oid| read_blob(repo, oid)).unwrap_or_default();
+        let ours = entry.our_oid
+            .map(|oid| read_blob(repo, oid))
+            // If stage 2 absent (added-by-theirs), fall back to current workdir file
+            .or_else(|| {
+                workdir.as_ref()
+                    .and_then(|wd| std::fs::read_to_string(wd.join(&entry.path)).ok())
+            })
+            .unwrap_or_default();
         let theirs = entry.their_oid.map(|oid| read_blob(repo, oid)).unwrap_or_default();
 
         let ours_nl = if ours.ends_with('\n') { "" } else { "\n" };
@@ -339,7 +346,8 @@ pub async fn smart_checkout(repo_path: String, name: String) -> Result<Vec<Strin
         let email = config.get_string("user.email").unwrap_or_else(|_| "unknown@example.com".to_string());
         let sig = Signature::now(&user_name, &email).map_err(|e| e.message().to_string())?;
         let msg = format!("smart-checkout: before {}", name);
-        repo.stash_save(&sig, &msg, None).map_err(|e| e.message().to_string())?;
+        repo.stash_save(&sig, &msg, Some(StashFlags::INCLUDE_UNTRACKED))
+            .map_err(|e| e.message().to_string())?;
     }
 
     // Checkout target branch; restore stash on failure
