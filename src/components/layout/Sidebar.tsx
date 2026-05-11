@@ -246,7 +246,9 @@ export function Sidebar() {
     description: string;
     confirmLabel?: string;
     onConfirm: () => void;
+    onCancel?: () => void;
     destructive?: boolean;
+    extraAction?: { label: string; destructive?: boolean; action: () => void };
   }>({ open: false, title: "", description: "", onConfirm: () => {} });
 
   const closeConfirm = () => setConfirm((s) => ({ ...s, open: false }));
@@ -261,12 +263,37 @@ export function Sidebar() {
     const result = await checkout(name);
     if (result !== "conflict") return;
 
-    // Case A: index already has unresolved conflicts → open viewers immediately
+    // Case A: index already has unresolved conflicts — must resolve or abort first
     if (activeRepo) {
       const existing = await git.getIndexConflicts(activeRepo.path);
       if (existing.length > 0) {
-        toast.info(`${existing.length} conflict${existing.length !== 1 ? "s" : ""} must be resolved before switching`);
-        await openConflictViewers(existing);
+        const repoPath = activeRepo.path;
+        setConfirm({
+          open: true,
+          title: "Unresolved Conflicts",
+          description: `${existing.length} file${existing.length !== 1 ? "s have" : " has"} unresolved conflicts. Resolve them before switching, or abort to restore all conflicted files to HEAD.`,
+          confirmLabel: "Resolve Conflicts",
+          onConfirm: async () => {
+            closeConfirm();
+            await openConflictViewers(existing);
+          },
+          destructive: false,
+          onCancel: undefined as unknown as () => void,
+          extraAction: {
+            label: "Abort & Restore HEAD",
+            destructive: true,
+            action: async () => {
+              closeConfirm();
+              try {
+                await git.abortConflicts(repoPath);
+                toast.success("Conflicts aborted — files restored to HEAD");
+                await checkout(name);
+              } catch (e) {
+                toast.error(String(e));
+              }
+            },
+          },
+        });
         return;
       }
     }
@@ -604,7 +631,8 @@ export function Sidebar() {
         confirmLabel={confirm.confirmLabel}
         destructive={confirm.destructive}
         onConfirm={confirm.onConfirm}
-        onCancel={closeConfirm}
+        onCancel={confirm.onCancel ?? closeConfirm}
+        extraAction={confirm.extraAction}
       />
     </>
   );

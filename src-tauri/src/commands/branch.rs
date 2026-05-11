@@ -378,3 +378,26 @@ pub async fn smart_checkout(repo_path: String, name: String) -> Result<Vec<Strin
 
     collect_index_conflicts(&repo)
 }
+
+/// Abort the current conflict state: reset index to HEAD and restore conflicted
+/// working-tree files to HEAD's version. Equivalent to `git reset --merge`.
+/// Keeps unstaged changes in non-conflicted files.
+#[tauri::command]
+pub async fn abort_conflicts(repo_path: String) -> Result<(), String> {
+    let repo = Repository::open(&repo_path).map_err(|e| e.message().to_string())?;
+    let workdir = repo.workdir()
+        .ok_or_else(|| "not a working repository".to_string())?
+        .to_path_buf();
+
+    let status = std::process::Command::new("git")
+        .arg("reset")
+        .arg("--merge")
+        .current_dir(&workdir)
+        .status()
+        .map_err(|e| e.to_string())?;
+
+    if !status.success() {
+        return Err("git reset --merge failed".to_string());
+    }
+    Ok(())
+}

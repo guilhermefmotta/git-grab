@@ -9,6 +9,12 @@ import {
   AlertDialogCancel,
 } from "@/components/ui/alert-dialog";
 
+interface ExtraAction {
+  label: string;
+  destructive?: boolean;
+  action: () => void;
+}
+
 interface Props {
   open: boolean;
   title: string;
@@ -17,6 +23,7 @@ interface Props {
   onConfirm: () => void;
   onCancel: () => void;
   destructive?: boolean;
+  extraAction?: ExtraAction;
 }
 
 export function ConfirmDialog({
@@ -27,6 +34,7 @@ export function ConfirmDialog({
   onConfirm,
   onCancel,
   destructive = false,
+  extraAction,
 }: Props) {
   return (
     <AlertDialog open={open}>
@@ -37,6 +45,11 @@ export function ConfirmDialog({
         </AlertDialogHeader>
         <AlertDialogFooter>
           <AlertDialogCancel onClick={onCancel}>Cancel</AlertDialogCancel>
+          {extraAction && (
+            <AlertDialogAction destructive={extraAction.destructive} onClick={extraAction.action}>
+              {extraAction.label}
+            </AlertDialogAction>
+          )}
           <AlertDialogAction destructive={destructive} onClick={onConfirm}>
             {confirmLabel}
           </AlertDialogAction>
