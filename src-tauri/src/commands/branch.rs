@@ -245,15 +245,33 @@ pub async fn rebase_branch(repo_path: String, branch_name: String) -> Result<(),
     rebase.finish(Some(&sig)).map_err(|e| e.message().to_string())
 }
 
-/// Collect conflicted file paths from index and use git2's checkout to write
-/// proper conflict markers (<<<<<<<) to disk. This is the authoritative approach —
-/// libgit2 handles all conflict types (modified/deleted/added) correctly.
+struct ConflictEntry {
+    path: String,
+    our_oid: Option<git2::Oid>,
+    their_oid: Option<git2::Oid>,
+}
+
+/// Read blob content by OID; return empty string if missing or binary.
+fn read_blob(repo: &Repository, oid: git2::Oid) -> String {
+    repo.find_blob(oid)
+        .ok()
+        .and_then(|b| std::str::from_utf8(b.content()).ok().map(String::from))
+        .unwrap_or_default()
+}
+
+/// Collect conflicted file paths and write <<<<<<< markers directly from
+/// git blob objects (stages 2 = ours, 3 = theirs). More reliable than
+/// checkout_index which can fail silently when the workdir file is dirty.
 fn collect_index_conflicts(repo: &Repository) -> Result<Vec<String>, String> {
     let mut index = repo.index().map_err(|e| e.message().to_string())?;
-    // Force re-read so we see stash_pop's changes even on a cached index object.
     index.read(true).ok();
 
-    let mut paths: Vec<String> = Vec::new();
+    let our_label = repo
+        .head().ok()
+        .and_then(|h| h.shorthand().map(String::from))
+        .unwrap_or_else(|| "HEAD".to_string());
+
+    let mut entries: Vec<ConflictEntry> = Vec::new();
     {
         let conflicts = index.conflicts().map_err(|e| e.message().to_string())?;
         for c in conflicts {
@@ -263,23 +281,34 @@ fn collect_index_conflicts(repo: &Repository) -> Result<Vec<String>, String> {
                 .or(c.ancestor.as_ref())
                 .and_then(|e| std::str::from_utf8(&e.path).ok().map(String::from));
             if let Some(p) = path {
-                paths.push(p);
+                entries.push(ConflictEntry {
+                    path: p,
+                    our_oid: c.our.as_ref().map(|e| e.id),
+                    their_oid: c.their.as_ref().map(|e| e.id),
+                });
             }
         }
     }
 
-    if !paths.is_empty() {
-        // Let libgit2 write the <<<<<<< markers from index stages 1/2/3.
-        let mut cb = git2::build::CheckoutBuilder::new();
-        cb.conflict_style_merge(true).force();
-        for p in &paths {
-            cb.path(p.as_str());
+    let workdir = repo.workdir().map(|p| p.to_path_buf());
+
+    for entry in &entries {
+        let ours = entry.our_oid.map(|oid| read_blob(repo, oid)).unwrap_or_default();
+        let theirs = entry.their_oid.map(|oid| read_blob(repo, oid)).unwrap_or_default();
+
+        let ours_nl = if ours.ends_with('\n') { "" } else { "\n" };
+        let theirs_nl = if theirs.ends_with('\n') { "" } else { "\n" };
+
+        let content = format!(
+            "<<<<<<< {our_label}\n{ours}{ours_nl}=======\n{theirs}{theirs_nl}>>>>>>> incoming\n",
+        );
+
+        if let Some(ref wd) = workdir {
+            let _ = std::fs::write(wd.join(&entry.path), content);
         }
-        // Ignore error — markers may already be present or file may be binary.
-        repo.checkout_index(Some(&mut index), Some(&mut cb)).ok();
     }
 
-    Ok(paths)
+    Ok(entries.into_iter().map(|e| e.path).collect())
 }
 
 #[tauri::command]
