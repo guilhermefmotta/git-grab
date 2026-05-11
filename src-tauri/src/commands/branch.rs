@@ -259,9 +259,11 @@ fn read_blob(repo: &Repository, oid: git2::Oid) -> String {
         .unwrap_or_default()
 }
 
-/// Collect conflicted file paths and write <<<<<<< markers directly from
-/// git blob objects (stages 2 = ours, 3 = theirs). More reliable than
-/// checkout_index which can fail silently when the workdir file is dirty.
+/// Collect conflicted file paths and write proper <<<<<<< / ======= / >>>>>>>
+/// markers with context lines. Uses `git checkout --conflict=merge` (proper
+/// 3-way line diff) so only the differing lines get markers; context is plain.
+/// Falls back to whole-blob wrapping when that command can't produce markers
+/// (e.g., file only exists on one side).
 fn collect_index_conflicts(repo: &Repository) -> Result<Vec<String>, String> {
     let mut index = repo.index().map_err(|e| e.message().to_string())?;
     index.read(true).ok();
@@ -290,28 +292,47 @@ fn collect_index_conflicts(repo: &Repository) -> Result<Vec<String>, String> {
         }
     }
 
+    if entries.is_empty() {
+        return Ok(vec![]);
+    }
+
     let workdir = repo.workdir().map(|p| p.to_path_buf());
 
+    // Primary: let git itself write partial markers (only changed lines get
+    // <<<<<<< blocks; context lines remain visible in all three panels).
+    if let Some(ref wd) = workdir {
+        let _ = std::process::Command::new("git")
+            .arg("checkout")
+            .arg("--conflict=merge")
+            .arg("--")
+            .args(entries.iter().map(|e| e.path.as_str()))
+            .current_dir(wd)
+            .status();
+    }
+
+    // Fallback: for any file that still has no markers (added-only-on-one-side,
+    // binary, or git not on PATH), write a whole-blob conflict block.
     for entry in &entries {
-        let ours = entry.our_oid
-            .map(|oid| read_blob(repo, oid))
-            // If stage 2 absent (added-by-theirs), fall back to current workdir file
-            .or_else(|| {
-                workdir.as_ref()
-                    .and_then(|wd| std::fs::read_to_string(wd.join(&entry.path)).ok())
-            })
-            .unwrap_or_default();
-        let theirs = entry.their_oid.map(|oid| read_blob(repo, oid)).unwrap_or_default();
+        let fp = workdir.as_ref().map(|wd| wd.join(&entry.path));
+        let has_markers = fp.as_ref()
+            .and_then(|p| std::fs::read_to_string(p).ok())
+            .map(|c| c.contains("<<<<<<<"))
+            .unwrap_or(false);
 
-        let ours_nl = if ours.ends_with('\n') { "" } else { "\n" };
-        let theirs_nl = if theirs.ends_with('\n') { "" } else { "\n" };
-
-        let content = format!(
-            "<<<<<<< {our_label}\n{ours}{ours_nl}=======\n{theirs}{theirs_nl}>>>>>>> incoming\n",
-        );
-
-        if let Some(ref wd) = workdir {
-            let _ = std::fs::write(wd.join(&entry.path), content);
+        if !has_markers {
+            let ours = entry.our_oid
+                .map(|oid| read_blob(repo, oid))
+                .or_else(|| fp.as_ref().and_then(|p| std::fs::read_to_string(p).ok()))
+                .unwrap_or_default();
+            let theirs = entry.their_oid.map(|oid| read_blob(repo, oid)).unwrap_or_default();
+            if !ours.is_empty() || !theirs.is_empty() {
+                let ours_nl = if ours.ends_with('\n') { "" } else { "\n" };
+                let theirs_nl = if theirs.ends_with('\n') { "" } else { "\n" };
+                let content = format!(
+                    "<<<<<<< {our_label}\n{ours}{ours_nl}=======\n{theirs}{theirs_nl}>>>>>>> incoming\n",
+                );
+                if let Some(ref p) = fp { let _ = std::fs::write(p, content); }
+            }
         }
     }
 
