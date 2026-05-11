@@ -35,6 +35,8 @@ pub fn run() {
             commands::branch::get_branches,
             commands::branch::create_branch,
             commands::branch::checkout_branch,
+            commands::branch::smart_checkout,
+            commands::branch::get_index_conflicts,
             commands::branch::delete_branch,
             commands::branch::rename_branch,
             commands::branch::merge_branch,

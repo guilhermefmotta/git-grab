@@ -215,7 +215,7 @@ function TagItem({
 
 export function Sidebar() {
   const { activeRepo, stashes, tags, setStashes, setTags, activeBranchFilter, setActiveBranchFilter } = useAppStore();
-  const { local, remote, checkout, createBranch, deleteBranch, refresh: refreshBranches } = useBranches();
+  const { local, remote, checkout, smartCheckout, openConflictViewers, createBranch, deleteBranch, refresh: refreshBranches } = useBranches();
   const { loadCommits } = useCommits();
   const { refresh: refreshStatus } = useStatus();
 
@@ -244,6 +244,7 @@ export function Sidebar() {
     open: boolean;
     title: string;
     description: string;
+    confirmLabel?: string;
     onConfirm: () => void;
     destructive?: boolean;
   }>({ open: false, title: "", description: "", onConfirm: () => {} });
@@ -254,6 +255,33 @@ export function Sidebar() {
     refreshBranches();
     loadCommits(0);
     refreshStatus();
+  };
+
+  const handleCheckout = async (name: string) => {
+    const result = await checkout(name);
+    if (result !== "conflict") return;
+
+    // Case A: index already has unresolved conflicts → open viewers immediately
+    if (activeRepo) {
+      const existing = await git.getIndexConflicts(activeRepo.path);
+      if (existing.length > 0) {
+        toast.info(`${existing.length} conflict${existing.length !== 1 ? "s" : ""} must be resolved before switching`);
+        await openConflictViewers(existing);
+        return;
+      }
+    }
+
+    // Case B: clean index, working tree changes block checkout → ask to smart-checkout
+    setConfirm({
+      open: true,
+      title: "Local Changes Block Checkout",
+      description: `Switching to "${name}" requires stashing your changes. Stash, switch, and resolve any conflicts?`,
+      confirmLabel: "Smart Checkout",
+      onConfirm: async () => {
+        closeConfirm();
+        await smartCheckout(name);
+      },
+    });
   };
 
   const handleDeleteBranch = (branch: BranchInfo) => {
@@ -450,7 +478,7 @@ export function Sidebar() {
             <BranchItem
               key={b.name}
               branch={b}
-              onCheckout={checkout}
+              onCheckout={handleCheckout}
               onDelete={handleDeleteBranch}
               onRename={(branch) => setRenameDialog({ open: true, branch, newName: branch.name })}
               onMerge={handleMerge}
@@ -573,6 +601,7 @@ export function Sidebar() {
         open={confirm.open}
         title={confirm.title}
         description={confirm.description}
+        confirmLabel={confirm.confirmLabel}
         destructive={confirm.destructive}
         onConfirm={confirm.onConfirm}
         onCancel={closeConfirm}

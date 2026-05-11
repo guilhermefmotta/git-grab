@@ -27,12 +27,47 @@ export function useBranches() {
   }, [activeRepo, setActiveRepo]);
 
   const checkout = useCallback(
-    async (name: string) => {
-      if (!activeRepo) return;
+    async (name: string): Promise<"ok" | "conflict" | "error"> => {
+      if (!activeRepo) return "error";
       try {
         await git.checkoutBranch(activeRepo.path, name);
         await Promise.all([refresh(), refreshHead()]);
         toast.success(`Switched to ${name}`);
+        return "ok";
+      } catch (e) {
+        const msg = String(e);
+        if (/conflict.{0,10}prevent.{0,10}checkout/i.test(msg) || msg.includes("unresolved conflicts")) return "conflict";
+        toast.error(msg);
+        return "error";
+      }
+    },
+    [activeRepo, refresh, refreshHead]
+  );
+
+  const openConflictViewers = useCallback(
+    async (conflicted: string[]) => {
+      if (!activeRepo) return;
+      for (const filePath of conflicted) {
+        const key = filePath.replace(/[^a-zA-Z0-9_-]/g, "-");
+        localStorage.setItem(`git_crab_conflict_${key}`, JSON.stringify({ repoPath: activeRepo.path, filePath }));
+        await git.openConflictWindow(key, `Resolve: ${filePath}`);
+      }
+    },
+    [activeRepo]
+  );
+
+  const smartCheckout = useCallback(
+    async (name: string) => {
+      if (!activeRepo) return;
+      try {
+        const conflicted = await git.smartCheckout(activeRepo.path, name);
+        await Promise.all([refresh(), refreshHead()]);
+        if (conflicted.length === 0) {
+          toast.success(`Switched to ${name}`);
+        } else {
+          toast.info(`${conflicted.length} conflict${conflicted.length !== 1 ? "s" : ""} need resolving`);
+          await openConflictViewers(conflicted);
+        }
       } catch (e) {
         toast.error(String(e));
       }
@@ -76,5 +111,5 @@ export function useBranches() {
   const remote = branches.filter((b) => b.is_remote);
   const currentBranch = branches.find((b) => b.is_head);
 
-  return { branches, local, remote, currentBranch, refresh, checkout, createBranch, deleteBranch };
+  return { branches, local, remote, currentBranch, refresh, checkout, smartCheckout, openConflictViewers, createBranch, deleteBranch };
 }

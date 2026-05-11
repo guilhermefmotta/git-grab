@@ -57,6 +57,10 @@ export const git = {
     invoke<void>("create_branch", { repoPath, name, fromHash, checkout }),
   checkoutBranch: (repoPath: string, name: string) =>
     invoke<void>("checkout_branch", { repoPath, name }),
+  smartCheckout: (repoPath: string, name: string) =>
+    invoke<string[]>("smart_checkout", { repoPath, name }),
+  getIndexConflicts: (repoPath: string) =>
+    invoke<string[]>("get_index_conflicts", { repoPath }),
   deleteBranch: (repoPath: string, name: string, force?: boolean) =>
     invoke<void>("delete_branch", { repoPath, name, force }),
   renameBranch: (repoPath: string, name: string, newName: string) =>

@@ -1,5 +1,5 @@
 use crate::git::types::BranchInfo;
-use git2::{BranchType, Repository, Signature};
+use git2::{BranchType, Repository, Signature, StashApplyOptions};
 
 #[tauri::command]
 pub async fn get_branches(repo_path: String) -> Result<Vec<BranchInfo>, String> {
@@ -243,4 +243,89 @@ pub async fn rebase_branch(repo_path: String, branch_name: String) -> Result<(),
     }
 
     rebase.finish(Some(&sig)).map_err(|e| e.message().to_string())
+}
+
+/// Collect conflicted file paths from index and use git2's checkout to write
+/// proper conflict markers (<<<<<<<) to disk. This is the authoritative approach —
+/// libgit2 handles all conflict types (modified/deleted/added) correctly.
+fn collect_index_conflicts(repo: &Repository) -> Result<Vec<String>, String> {
+    let mut index = repo.index().map_err(|e| e.message().to_string())?;
+    // Force re-read so we see stash_pop's changes even on a cached index object.
+    index.read(true).ok();
+
+    let mut paths: Vec<String> = Vec::new();
+    {
+        let conflicts = index.conflicts().map_err(|e| e.message().to_string())?;
+        for c in conflicts {
+            let c = match c { Ok(c) => c, Err(_) => continue };
+            let path = c.our.as_ref()
+                .or(c.their.as_ref())
+                .or(c.ancestor.as_ref())
+                .and_then(|e| std::str::from_utf8(&e.path).ok().map(String::from));
+            if let Some(p) = path {
+                paths.push(p);
+            }
+        }
+    }
+
+    if !paths.is_empty() {
+        // Let libgit2 write the <<<<<<< markers from index stages 1/2/3.
+        let mut cb = git2::build::CheckoutBuilder::new();
+        cb.conflict_style_merge(true).force();
+        for p in &paths {
+            cb.path(p.as_str());
+        }
+        // Ignore error — markers may already be present or file may be binary.
+        repo.checkout_index(Some(&mut index), Some(&mut cb)).ok();
+    }
+
+    Ok(paths)
+}
+
+#[tauri::command]
+pub async fn get_index_conflicts(repo_path: String) -> Result<Vec<String>, String> {
+    let repo = Repository::open(&repo_path).map_err(|e| e.message().to_string())?;
+    collect_index_conflicts(&repo)
+}
+
+/// Smart checkout:
+/// - If index already has conflicts → open those first (don't switch branch).
+/// - Otherwise: stash → checkout → pop stash → ensure markers.
+/// Returns conflicted file paths for the viewer.
+#[tauri::command]
+pub async fn smart_checkout(repo_path: String, name: String) -> Result<Vec<String>, String> {
+    let repo = Repository::open(&repo_path).map_err(|e| e.message().to_string())?;
+
+    // If the index already has unresolved conflicts, surface them now.
+    let existing = collect_index_conflicts(&repo)?;
+    if !existing.is_empty() {
+        return Ok(existing);
+    }
+
+    // Stash local changes
+    {
+        let mut repo = Repository::open(&repo_path).map_err(|e| e.message().to_string())?;
+        let config = repo.config().map_err(|e| e.message().to_string())?;
+        let user_name = config.get_string("user.name").unwrap_or_else(|_| "Unknown".to_string());
+        let email = config.get_string("user.email").unwrap_or_else(|_| "unknown@example.com".to_string());
+        let sig = Signature::now(&user_name, &email).map_err(|e| e.message().to_string())?;
+        let msg = format!("smart-checkout: before {}", name);
+        repo.stash_save(&sig, &msg, None).map_err(|e| e.message().to_string())?;
+    }
+
+    // Checkout target branch; restore stash on failure
+    if let Err(e) = checkout_branch(repo_path.clone(), name).await {
+        if let Ok(mut repo) = Repository::open(&repo_path) {
+            let mut opts = StashApplyOptions::new();
+            let _ = repo.stash_pop(0, Some(&mut opts));
+        }
+        return Err(e);
+    }
+
+    // Pop stash — may create conflicts
+    let mut repo = Repository::open(&repo_path).map_err(|e| e.message().to_string())?;
+    let mut opts = StashApplyOptions::new();
+    let _ = repo.stash_pop(0, Some(&mut opts));
+
+    collect_index_conflicts(&repo)
 }
