@@ -306,8 +306,16 @@ fn collect_index_conflicts(repo: &Repository) -> Result<Vec<String>, String> {
         let ancestor = entry.ancestor_oid.map(|oid| read_blob(repo, oid)).unwrap_or_default();
         let ours = entry.our_oid
             .map(|oid| read_blob(repo, oid))
-            // stage 2 absent = file added only by theirs; use workdir as baseline
-            .or_else(|| fp.as_ref().and_then(|p| std::fs::read_to_string(p).ok()))
+            .or_else(|| {
+                // Workdir fallback ONLY when ancestor is also absent (file added only by
+                // theirs). When ancestor exists but our_oid is absent, we deleted the file
+                // → represent as "" so diffy sees the deletion as a conflict.
+                if entry.ancestor_oid.is_none() {
+                    fp.as_ref().and_then(|p| std::fs::read_to_string(p).ok())
+                } else {
+                    None
+                }
+            })
             .unwrap_or_default();
         let theirs = entry.their_oid.map(|oid| read_blob(repo, oid)).unwrap_or_default();
 
