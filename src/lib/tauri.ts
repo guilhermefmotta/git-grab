@@ -10,6 +10,7 @@ import type {
   StashInfo,
   TagInfo,
 } from "./types";
+import type { RepoStatus, ConflictContent, MergeOutcome, CheckoutOutcome } from "./mergeTypes";
 
 export { invoke };
 
@@ -57,20 +58,30 @@ export const git = {
     invoke<void>("create_branch", { repoPath, name, fromHash, checkout }),
   checkoutBranch: (repoPath: string, name: string) =>
     invoke<void>("checkout_branch", { repoPath, name }),
-  smartCheckout: (repoPath: string, name: string) =>
-    invoke<string[]>("smart_checkout", { repoPath, name }),
-  getIndexConflicts: (repoPath: string) =>
-    invoke<string[]>("get_index_conflicts", { repoPath }),
-  abortConflicts: (repoPath: string) =>
-    invoke<void>("abort_conflicts", { repoPath }),
   deleteBranch: (repoPath: string, name: string, force?: boolean) =>
     invoke<void>("delete_branch", { repoPath, name, force }),
   renameBranch: (repoPath: string, name: string, newName: string) =>
     invoke<void>("rename_branch", { repoPath, name, newName }),
-  mergeBranch: (repoPath: string, branchName: string) =>
-    invoke<void>("merge_branch", { repoPath, branchName }),
   rebaseBranch: (repoPath: string, branchName: string) =>
-    invoke<void>("rebase_branch", { repoPath, branchName }),
+    invoke<MergeOutcome>("rebase_branch", { repoPath, branchName }),
+
+  // Merge / conflict workflow
+  getRepoStatus: (repoPath: string) =>
+    invoke<RepoStatus>("get_repo_status", { repoPath }),
+  getConflictContent: (repoPath: string, filePath: string) =>
+    invoke<ConflictContent>("get_conflict_content", { repoPath, filePath }),
+  resolveConflict: (repoPath: string, filePath: string, content: string) =>
+    invoke<void>("resolve_conflict", { repoPath, filePath, content }),
+  abortOperation: (repoPath: string) =>
+    invoke<void>("abort_operation", { repoPath }),
+  completeMergeCommit: (repoPath: string, message?: string) =>
+    invoke<void>("complete_merge_commit", { repoPath, message }),
+  continueOperation: (repoPath: string) =>
+    invoke<RepoStatus>("continue_operation", { repoPath }),
+  smartCheckout: (repoPath: string, name: string) =>
+    invoke<CheckoutOutcome>("smart_checkout", { repoPath, name }),
+  doMerge: (repoPath: string, branchName: string) =>
+    invoke<MergeOutcome>("do_merge", { repoPath, branchName }),
 
   // Commit operations
   cherryPick: (repoPath: string, commitHash: string) =>
@@ -111,8 +122,6 @@ export const git = {
     invoke<void>("open_commit_window", { hash, title }),
   openFileDiffWindow: (key: string, title: string) =>
     invoke<void>("open_file_diff_window", { key, title }),
-  openConflictWindow: (key: string, title: string) =>
-    invoke<void>("open_conflict_window", { key, title }),
 
   // File operations
   ignoreFile: (repoPath: string, filePath: string) =>

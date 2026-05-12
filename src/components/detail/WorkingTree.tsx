@@ -211,17 +211,6 @@ export function WorkingTree() {
     }
   };
 
-  const openConflictWindow = async (filePath: string) => {
-    if (!activeRepo) return;
-    const key = filePath.replace(/[^a-zA-Z0-9_-]/g, "-");
-    const meta = { repoPath: activeRepo.path, filePath };
-    localStorage.setItem(`git_crab_conflict_${key}`, JSON.stringify(meta));
-    try {
-      await git.openConflictWindow(key, `Resolve: ${filePath}`);
-    } catch (e) {
-      toast.error(String(e));
-    }
-  };
 
   const handleIgnoreFile = async (filePath: string) => {
     if (!activeRepo) return;
@@ -274,8 +263,8 @@ export function WorkingTree() {
                 icon={AlertTriangle}
                 iconClass="text-destructive"
                 selected={selectedFilePath === f.path}
-                onClick={() => openConflictWindow(f.path)}
-                onDoubleClick={() => openConflictWindow(f.path)}
+                onClick={() => {}}
+                onDoubleClick={() => {}}
                 onOpenEditor={() => handleOpenEditor(f.path)}
               />
             ))}

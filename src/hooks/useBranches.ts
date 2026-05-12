@@ -2,6 +2,7 @@ import { useCallback, useEffect } from "react";
 import { toast } from "sonner";
 import { git } from "@/lib/tauri";
 import { useAppStore } from "@/store/appStore";
+import type { MergeOutcome, CheckoutOutcome } from "@/lib/mergeTypes";
 
 export function useBranches() {
   const { activeRepo, branches, setBranches, setActiveRepo } = useAppStore();
@@ -36,7 +37,12 @@ export function useBranches() {
         return "ok";
       } catch (e) {
         const msg = String(e);
-        if (/conflict.{0,10}prevent.{0,10}checkout/i.test(msg) || msg.includes("unresolved conflicts")) return "conflict";
+        if (/conflict.{0,10}prevent.{0,10}checkout/i.test(msg)
+          || msg.includes("unresolved conflicts")
+          || msg.includes("overwritten by checkout")
+          || msg.includes("needs merge")) {
+          return "conflict";
+        }
         toast.error(msg);
         return "error";
       }
@@ -44,32 +50,46 @@ export function useBranches() {
     [activeRepo, refresh, refreshHead]
   );
 
-  const openConflictViewers = useCallback(
-    async (conflicted: string[]) => {
-      if (!activeRepo) return;
-      for (const filePath of conflicted) {
-        const key = filePath.replace(/[^a-zA-Z0-9_-]/g, "-");
-        localStorage.setItem(`git_crab_conflict_${key}`, JSON.stringify({ repoPath: activeRepo.path, filePath }));
-        await git.openConflictWindow(key, `Resolve: ${filePath}`);
-      }
-    },
-    [activeRepo]
-  );
-
   const smartCheckout = useCallback(
-    async (name: string) => {
-      if (!activeRepo) return;
+    async (name: string): Promise<CheckoutOutcome | null> => {
+      if (!activeRepo) return null;
       try {
-        const conflicted = await git.smartCheckout(activeRepo.path, name);
+        const outcome = await git.smartCheckout(activeRepo.path, name);
         await Promise.all([refresh(), refreshHead()]);
-        if (conflicted.length === 0) {
-          toast.success(`Switched to ${name}`);
-        } else {
-          toast.info(`${conflicted.length} conflict${conflicted.length !== 1 ? "s" : ""} need resolving`);
-          await openConflictViewers(conflicted);
-        }
+        return outcome;
       } catch (e) {
         toast.error(String(e));
+        return null;
+      }
+    },
+    [activeRepo, refresh, refreshHead]
+  );
+
+  const mergeBranch = useCallback(
+    async (name: string): Promise<MergeOutcome | null> => {
+      if (!activeRepo) return null;
+      try {
+        const outcome = await git.doMerge(activeRepo.path, name);
+        await Promise.all([refresh(), refreshHead()]);
+        return outcome;
+      } catch (e) {
+        toast.error(String(e));
+        return null;
+      }
+    },
+    [activeRepo, refresh, refreshHead]
+  );
+
+  const rebaseBranch = useCallback(
+    async (name: string): Promise<MergeOutcome | null> => {
+      if (!activeRepo) return null;
+      try {
+        const outcome = await git.rebaseBranch(activeRepo.path, name);
+        await Promise.all([refresh(), refreshHead()]);
+        return outcome;
+      } catch (e) {
+        toast.error(String(e));
+        return null;
       }
     },
     [activeRepo, refresh, refreshHead]
@@ -107,9 +127,13 @@ export function useBranches() {
     if (activeRepo) refresh();
   }, [activeRepo?.path]);
 
-  const local = branches.filter((b) => !b.is_remote);
-  const remote = branches.filter((b) => b.is_remote);
-  const currentBranch = branches.find((b) => b.is_head);
+  const local         = branches.filter(b => !b.is_remote);
+  const remote        = branches.filter(b => b.is_remote);
+  const currentBranch = branches.find(b => b.is_head);
 
-  return { branches, local, remote, currentBranch, refresh, checkout, smartCheckout, openConflictViewers, createBranch, deleteBranch };
+  return {
+    branches, local, remote, currentBranch,
+    refresh, checkout, smartCheckout, mergeBranch, rebaseBranch,
+    createBranch, deleteBranch,
+  };
 }

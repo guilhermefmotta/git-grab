@@ -213,9 +213,9 @@ function TagItem({
   );
 }
 
-export function Sidebar() {
+export function Sidebar({ onOperationComplete }: { onOperationComplete?: () => void }) {
   const { activeRepo, stashes, tags, setStashes, setTags, activeBranchFilter, setActiveBranchFilter } = useAppStore();
-  const { local, remote, checkout, smartCheckout, openConflictViewers, createBranch, deleteBranch, refresh: refreshBranches } = useBranches();
+  const { local, remote, checkout, smartCheckout, mergeBranch, rebaseBranch, createBranch, deleteBranch, refresh: refreshBranches } = useBranches();
   const { loadCommits } = useCommits();
   const { refresh: refreshStatus } = useStatus();
 
@@ -257,56 +257,53 @@ export function Sidebar() {
     refreshBranches();
     loadCommits(0);
     refreshStatus();
+    onOperationComplete?.();
   };
 
   const handleCheckout = async (name: string) => {
     const result = await checkout(name);
-    if (result !== "conflict") return;
+    if (result !== "conflict") { fullRefresh(); return; }
 
-    // Case A: index already has unresolved conflicts — must resolve or abort first
+    // Detect existing index conflicts vs. working-tree-blocks-checkout
     if (activeRepo) {
-      const existing = await git.getIndexConflicts(activeRepo.path);
-      if (existing.length > 0) {
-        const repoPath = activeRepo.path;
-        setConfirm({
-          open: true,
-          title: "Unresolved Conflicts",
-          description: `${existing.length} file${existing.length !== 1 ? "s have" : " has"} unresolved conflicts. Resolve them before switching, or abort to restore all conflicted files to HEAD.`,
-          confirmLabel: "Resolve Conflicts",
-          onConfirm: async () => {
-            closeConfirm();
-            await openConflictViewers(existing);
-          },
-          destructive: false,
-          onCancel: undefined as unknown as () => void,
-          extraAction: {
-            label: "Abort & Restore HEAD",
-            destructive: true,
-            action: async () => {
-              closeConfirm();
-              try {
-                await git.abortConflicts(repoPath);
-                toast.success("Conflicts aborted — files restored to HEAD");
-                await checkout(name);
-              } catch (e) {
-                toast.error(String(e));
-              }
-            },
-          },
-        });
+      const status = await git.getRepoStatus(activeRepo.path);
+      if (status.conflictedFiles.length > 0) {
+        // Already have conflicts in index — surface MergeWorkspace
+        fullRefresh();
         return;
       }
     }
 
-    // Case B: clean index, working tree changes block checkout → ask to smart-checkout
+    // Working-tree changes would be overwritten → offer Smart Checkout
     setConfirm({
       open: true,
       title: "Local Changes Block Checkout",
-      description: `Switching to "${name}" requires stashing your changes. Stash, switch, and resolve any conflicts?`,
+      description: `Switching to "${name}" will stash your local changes, switch branch, then restore them. Conflicts will open in the resolver.`,
       confirmLabel: "Smart Checkout",
       onConfirm: async () => {
         closeConfirm();
-        await smartCheckout(name);
+        const outcome = await smartCheckout(name);
+        fullRefresh();
+        if (outcome && outcome.conflictedFiles.length > 0) {
+          toast.info(`${outcome.conflictedFiles.length} conflict(s) — resolve in the merge editor`);
+        } else if (outcome) {
+          toast.success(`Switched to ${outcome.switchedTo}`);
+        }
+      },
+      extraAction: {
+        label: "Force Checkout",
+        destructive: true,
+        action: async () => {
+          closeConfirm();
+          if (!activeRepo) return;
+          try {
+            await git.checkoutBranch(activeRepo.path, name);
+            fullRefresh();
+            toast.success(`Switched to ${name} (changes discarded)`);
+          } catch (e) {
+            toast.error(String(e));
+          }
+        },
       },
     });
   };
@@ -331,13 +328,15 @@ export function Sidebar() {
       description: `Merge "${name}" into current branch?`,
       onConfirm: async () => {
         closeConfirm();
-        if (!activeRepo) return;
-        try {
-          await git.mergeBranch(activeRepo.path, name);
-          fullRefresh();
+        const outcome = await mergeBranch(name);
+        fullRefresh();
+        if (!outcome) return;
+        if (outcome.conflictedFiles.length > 0) {
+          toast.info(`${outcome.conflictedFiles.length} conflict(s) — resolve in the merge editor`);
+        } else if (outcome.fastForward) {
+          toast.success(`Fast-forwarded to ${name}`);
+        } else {
           toast.success(`Merged ${name}`);
-        } catch (e) {
-          toast.error(String(e));
         }
       },
     });
@@ -350,13 +349,13 @@ export function Sidebar() {
       description: `Rebase current branch onto "${name}"? This rewrites history.`,
       onConfirm: async () => {
         closeConfirm();
-        if (!activeRepo) return;
-        try {
-          await git.rebaseBranch(activeRepo.path, name);
-          fullRefresh();
+        const outcome = await rebaseBranch(name);
+        fullRefresh();
+        if (!outcome) return;
+        if (outcome.conflictedFiles.length > 0) {
+          toast.info(`${outcome.conflictedFiles.length} conflict(s) — resolve in the merge editor`);
+        } else {
           toast.success(`Rebased onto ${name}`);
-        } catch (e) {
-          toast.error(String(e));
         }
       },
     });
