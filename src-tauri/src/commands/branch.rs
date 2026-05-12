@@ -319,12 +319,14 @@ fn collect_index_conflicts(repo: &Repository) -> Result<Vec<String>, String> {
             .unwrap_or_default();
         let theirs = entry.their_oid.map(|oid| read_blob(repo, oid)).unwrap_or_default();
 
-        // If either side already has conflict markers (e.g., stash captured a file
-        // that was itself in a conflicted state), diffy would produce nested markers
-        // that our parser cannot handle. Fall back to whole-blob format in that case.
+        // Use whole-blob format when:
+        // - either side already has conflict markers (diffy would produce nested markers), OR
+        // - one side is empty (delete/modify conflict) — diffy on ("full", "", "full+1") produces
+        //   many tiny conflict blocks which are hard to present; whole-blob is cleaner.
         let has_nested = ours.contains("<<<<<<<") || theirs.contains("<<<<<<<");
+        let is_delete = ours.is_empty() || theirs.is_empty();
 
-        let content = if has_nested {
+        let content = if has_nested || is_delete {
             // Whole-blob: show full ours vs full theirs so the parser sees exactly
             // one clean conflict block. User picks Accept Ours (HEAD) or Accept Theirs.
             let ours_nl = if ours.ends_with('\n') { "" } else { "\n" };
