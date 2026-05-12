@@ -9,35 +9,129 @@ import { WelcomeScreen } from "@/components/dialogs/WelcomeScreen";
 import { SettingsDialog } from "@/components/dialogs/SettingsDialog";
 import { MergeWorkspace } from "@/components/merge/MergeWorkspace";
 import { git } from "@/lib/tauri";
+import { toast } from "sonner";
 import type { RepoStatus } from "@/lib/mergeTypes";
+import { GitMerge, Loader2, AlertTriangle } from "lucide-react";
+
+// Merge-ready (0 conflicts, needs commit/continue)
+function MergeReadyBanner({
+  repoPath, status, onDone,
+}: {
+  repoPath: string;
+  status: RepoStatus;
+  onDone: () => void;
+}) {
+  const [loading, setLoading] = useState(false);
+
+  const commit = async () => {
+    setLoading(true);
+    try {
+      if (status.operation === "Merging") {
+        await git.completeMergeCommit(repoPath);
+        toast.success("Merge committed");
+      } else {
+        const next = await git.continueOperation(repoPath);
+        if (next.conflictedFiles.length > 0) {
+          toast.info(`${next.conflictedFiles.length} new conflict(s) — opening resolver`);
+        } else {
+          toast.success("Operation completed");
+        }
+      }
+      onDone();
+    } catch (e) { toast.error(String(e)); }
+    finally { setLoading(false); }
+  };
+
+  const abort = async () => {
+    setLoading(true);
+    try {
+      await git.abortOperation(repoPath);
+      toast.success("Aborted — files restored");
+      onDone();
+    } catch (e) { toast.error(String(e)); }
+    finally { setLoading(false); }
+  };
+
+  const label = status.operation === "Rebasing" ? "Continue Rebase" : "Commit Merge";
+
+  return (
+    <div className="flex items-center gap-3 px-4 py-2 border-b border-green-500/20 bg-green-950/10 shrink-0">
+      <GitMerge size={13} className="text-green-400 shrink-0" />
+      <span className="text-xs text-green-300 flex-1">
+        All conflicts resolved
+        {status.operationLabel && (
+          <span className="text-green-400/50 font-mono ml-2">{status.operationLabel}</span>
+        )}
+        {" — "}
+        <span className="text-muted-foreground">ready to {label.toLowerCase()}</span>
+      </span>
+      <div className="flex items-center gap-2 shrink-0">
+        <button onClick={abort} disabled={loading}
+          className="px-2.5 py-1 text-xs border border-border/40 rounded text-muted-foreground hover:text-foreground hover:bg-accent/20 transition-colors disabled:opacity-40">
+          Abort
+        </button>
+        <button onClick={commit} disabled={loading}
+          className="flex items-center gap-1.5 px-3 py-1 text-xs bg-green-700 text-white rounded hover:bg-green-600 transition-colors disabled:opacity-40">
+          {loading && <Loader2 size={10} className="animate-spin" />}
+          {label}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// Conflict banner (conflicts present, resolver not open yet)
+function ConflictBanner({ status, onResolve }: { status: RepoStatus; onResolve: () => void }) {
+  return (
+    <div className="flex items-center gap-3 px-4 py-2 border-b border-yellow-500/20 bg-yellow-950/10 shrink-0">
+      <AlertTriangle size={13} className="text-yellow-400 shrink-0" />
+      <span className="text-xs text-yellow-300 flex-1">
+        {status.conflictedFiles.length} file{status.conflictedFiles.length !== 1 ? "s have" : " has"} conflicts
+        {status.operationLabel && (
+          <span className="text-yellow-400/50 font-mono ml-2">{status.operationLabel}</span>
+        )}
+      </span>
+      <button onClick={onResolve}
+        className="px-3 py-1 text-xs bg-yellow-700 text-white rounded hover:bg-yellow-600 transition-colors">
+        Resolve Conflicts
+      </button>
+    </div>
+  );
+}
+
+// ── App ───────────────────────────────────────────────────────────────────────
 
 export default function App() {
   const { activeRepo, settings, setSelectedCommitHash } = useAppStore();
-  const [settingsOpen, setSettingsOpen]   = useState(false);
-  const [mergeStatus, setMergeStatus]     = useState<RepoStatus | null>(null);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [mergeStatus, setMergeStatus]   = useState<RepoStatus | null>(null);
+  const [showResolver, setShowResolver] = useState(false);
 
-  // Apply theme + font size
   useEffect(() => {
     document.documentElement.classList.toggle("light", settings.theme === "light");
     document.body.style.fontSize = `${settings.fontSize}px`;
   }, [settings.theme, settings.fontSize]);
 
-  // Check repo conflict / merge state
   const refreshMergeStatus = useCallback(async () => {
-    if (!activeRepo) { setMergeStatus(null); return; }
+    if (!activeRepo) { setMergeStatus(null); setShowResolver(false); return; }
     try {
       const s = await git.getRepoStatus(activeRepo.path);
       const active = s.operation !== "Clean" || s.conflictedFiles.length > 0;
-      setMergeStatus(active ? s : null);
+      if (active) {
+        setMergeStatus(s);
+        if (s.conflictedFiles.length > 0) setShowResolver(true);
+      } else {
+        setMergeStatus(null);
+        setShowResolver(false);
+      }
     } catch {
       setMergeStatus(null);
+      setShowResolver(false);
     }
   }, [activeRepo]);
 
-  // Check on repo change
   useEffect(() => { refreshMergeStatus(); }, [activeRepo?.path]);
 
-  // Global keyboard shortcuts
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       const mod = e.metaKey || e.ctrlKey;
@@ -66,25 +160,42 @@ export default function App() {
     },
   };
 
+  const hasConflicts = (mergeStatus?.conflictedFiles.length ?? 0) > 0;
+  const mergeReady   = mergeStatus !== null && !hasConflicts;
+
   return (
     <div className="h-screen flex flex-col overflow-hidden bg-background text-foreground">
       <TopToolbar onOpenSettings={() => setSettingsOpen(true)} />
 
+      {/* Status banners — always visible, never hide the commit graph */}
+      {mergeReady && activeRepo && (
+        <MergeReadyBanner
+          repoPath={activeRepo.path}
+          status={mergeStatus!}
+          onDone={refreshMergeStatus}
+        />
+      )}
+      {hasConflicts && !showResolver && (
+        <ConflictBanner status={mergeStatus!} onResolve={() => setShowResolver(true)} />
+      )}
+
       <div className="flex flex-1 min-h-0 overflow-hidden">
         {!activeRepo ? (
           <WelcomeScreen />
-        ) : mergeStatus ? (
+        ) : showResolver && mergeStatus && hasConflicts ? (
+          // Full-screen conflict resolver
           <>
             <Sidebar onOperationComplete={refreshMergeStatus} />
             <div className="flex-1 min-w-0 overflow-hidden">
               <MergeWorkspace
                 repoPath={activeRepo.path}
                 status={mergeStatus}
-                onDone={refreshMergeStatus}
+                onDone={() => { setShowResolver(false); refreshMergeStatus(); }}
               />
             </div>
           </>
         ) : (
+          // Normal commit graph view
           <>
             <Sidebar onOperationComplete={refreshMergeStatus} />
             <CommitGraph />
