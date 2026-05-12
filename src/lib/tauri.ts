@@ -122,6 +122,8 @@ export const git = {
     invoke<void>("open_commit_window", { hash, title }),
   openFileDiffWindow: (key: string, title: string) =>
     invoke<void>("open_file_diff_window", { key, title }),
+  openMergeWindow: (repoPath: string) =>
+    invoke<void>("open_merge_window", { repoPath }),
 
   // File operations
   ignoreFile: (repoPath: string, filePath: string) =>

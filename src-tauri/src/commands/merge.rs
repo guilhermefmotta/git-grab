@@ -63,19 +63,6 @@ fn blob_text(repo: &Repository, oid: git2::Oid) -> Option<String> {
         .and_then(|b| std::str::from_utf8(b.content()).ok().map(String::from))
 }
 
-fn stage_content(repo: &Repository, index: &git2::Index, path: &str, stage: i32) -> Option<String> {
-    let p = std::path::Path::new(path);
-    index.get_path(p, stage)
-        .and_then(|entry| blob_text(repo, entry.id))
-}
-
-fn is_entry_binary(repo: &Repository, index: &git2::Index, path: &str, stage: i32) -> bool {
-    let p = std::path::Path::new(path);
-    index.get_path(p, stage)
-        .and_then(|entry| repo.find_blob(entry.id).ok())
-        .map(|b| std::str::from_utf8(b.content()).is_err())
-        .unwrap_or(false)
-}
 
 pub fn conflicted_paths(repo: &Repository) -> Result<Vec<String>, String> {
     let mut index = repo.index().map_err(|e| e.message().to_string())?;
@@ -155,22 +142,20 @@ fn run_git(workdir: &std::path::Path, args: &[&str]) -> Result<String, String> {
 }
 
 fn build_merged(ancestor: &str, ours: &str, theirs: &str, our_label: &str, their_label: &str) -> String {
-    let has_nested = ours.contains("<<<<<<<") || theirs.contains("<<<<<<<");
-    let is_delete  = ours.is_empty() || theirs.is_empty();
-
-    if has_nested || is_delete {
+    if ours.contains("<<<<<<<") || theirs.contains("<<<<<<<") {
+        // Nested markers — can't feed into diffy; wrap as single conflict
         let ours_nl   = if ours.ends_with('\n')   { "" } else { "\n" };
         let theirs_nl = if theirs.ends_with('\n') { "" } else { "\n" };
-        format!(
+        return format!(
             "<<<<<<< {our_label}\n{ours}{ours_nl}=======\n{theirs}{theirs_nl}>>>>>>> {their_label}\n"
-        )
-    } else {
-        let mut opts = diffy::MergeOptions::new();
-        opts.set_conflict_style(diffy::ConflictStyle::Merge);
-        match opts.merge(ancestor, ours, theirs) {
-            Ok(clean) => clean,
-            Err(conflict_text) => conflict_text,
-        }
+        );
+    }
+    // Always use diffy — it handles empty ours/theirs correctly via proper 3-way diff
+    let mut opts = diffy::MergeOptions::new();
+    opts.set_conflict_style(diffy::ConflictStyle::Merge);
+    match opts.merge(ancestor, ours, theirs) {
+        Ok(clean) => clean,
+        Err(conflict_text) => conflict_text,
     }
 }
 
@@ -221,13 +206,36 @@ pub async fn get_conflict_content(
     let our_label   = head_branch_name(&repo).unwrap_or_else(|| "HEAD".to_string());
     let their_label = operation_label(&repo).unwrap_or_else(|| "incoming".to_string());
 
-    let ancestor = stage_content(&repo, &index, &file_path, 1).unwrap_or_default();
-    let ours     = stage_content(&repo, &index, &file_path, 2).unwrap_or_default();
-    let theirs   = stage_content(&repo, &index, &file_path, 3).unwrap_or_default();
+    // Use conflicts() iterator — more reliable than index.get_path() for staged conflict entries
+    let (ancestor_id, our_id, their_id) = {
+        let conflicts = index.conflicts().map_err(|e| e.message().to_string())?;
+        let mut ids = (None::<git2::Oid>, None::<git2::Oid>, None::<git2::Oid>);
+        for c in conflicts {
+            let c = c.map_err(|e| e.message().to_string())?;
+            let path = c.our.as_ref()
+                .or(c.their.as_ref())
+                .or(c.ancestor.as_ref())
+                .and_then(|e| std::str::from_utf8(&e.path).ok().map(String::from));
+            if path.as_deref() == Some(&file_path) {
+                ids = (
+                    c.ancestor.map(|e| e.id),
+                    c.our.map(|e| e.id),
+                    c.their.map(|e| e.id),
+                );
+                break;
+            }
+        }
+        ids
+    };
 
-    let is_binary = is_entry_binary(&repo, &index, &file_path, 1)
-        || is_entry_binary(&repo, &index, &file_path, 2)
-        || is_entry_binary(&repo, &index, &file_path, 3);
+    let ancestor = ancestor_id.and_then(|id| blob_text(&repo, id)).unwrap_or_default();
+    let ours     = our_id.and_then(|id| blob_text(&repo, id)).unwrap_or_default();
+    let theirs   = their_id.and_then(|id| blob_text(&repo, id)).unwrap_or_default();
+
+    let is_binary = [ancestor_id, our_id, their_id]
+        .iter()
+        .flatten()
+        .any(|&id| repo.find_blob(id).map(|b| std::str::from_utf8(b.content()).is_err()).unwrap_or(false));
 
     let merged = if is_binary {
         String::new()

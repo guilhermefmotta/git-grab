@@ -268,8 +268,8 @@ export function Sidebar({ onOperationComplete }: { onOperationComplete?: () => v
     if (activeRepo) {
       const status = await git.getRepoStatus(activeRepo.path);
       if (status.conflictedFiles.length > 0) {
-        // Already have conflicts in index — surface MergeWorkspace
         fullRefresh();
+        git.openMergeWindow(activeRepo.path).catch(() => {});
         return;
       }
     }
@@ -285,7 +285,7 @@ export function Sidebar({ onOperationComplete }: { onOperationComplete?: () => v
         const outcome = await smartCheckout(name);
         fullRefresh();
         if (outcome && outcome.conflictedFiles.length > 0) {
-          toast.info(`${outcome.conflictedFiles.length} conflict(s) — resolve in the merge editor`);
+          git.openMergeWindow(activeRepo!.path).catch(() => {});
         } else if (outcome) {
           toast.success(`Switched to ${outcome.switchedTo}`);
         }
@@ -332,7 +332,7 @@ export function Sidebar({ onOperationComplete }: { onOperationComplete?: () => v
         fullRefresh();
         if (!outcome) return;
         if (outcome.conflictedFiles.length > 0) {
-          toast.info(`${outcome.conflictedFiles.length} conflict(s) — resolve in the merge editor`);
+          git.openMergeWindow(activeRepo!.path).catch(() => {});
         } else if (outcome.fastForward) {
           toast.success(`Fast-forwarded to ${name}`);
         } else {
@@ -353,7 +353,7 @@ export function Sidebar({ onOperationComplete }: { onOperationComplete?: () => v
         fullRefresh();
         if (!outcome) return;
         if (outcome.conflictedFiles.length > 0) {
-          toast.info(`${outcome.conflictedFiles.length} conflict(s) — resolve in the merge editor`);
+          git.openMergeWindow(activeRepo!.path).catch(() => {});
         } else {
           toast.success(`Rebased onto ${name}`);
         }

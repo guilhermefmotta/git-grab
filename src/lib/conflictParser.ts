@@ -1,4 +1,4 @@
-import type { Segment, ConflictSection } from "./mergeTypes";
+import type { Segment, ConflictSection, ConflictState } from "./mergeTypes";
 
 /** Parse the diffy-generated merged text into display segments. */
 export function parseSegments(merged: string): Segment[] {
@@ -38,13 +38,11 @@ export function parseSegments(merged: string): Segment[] {
   let lineNum = 1;
 
   while (pos < rawLines.length) {
-    // Find next conflict start
     const nextConflictLine = sections[si]
       ? rawLines.indexOf(`<<<<<<< ${sections[si].ourLabel}`, pos)
       : -1;
 
     if (nextConflictLine === -1 || nextConflictLine > pos) {
-      // Emit context up to next conflict (or EOF)
       const end = nextConflictLine === -1 ? rawLines.length : nextConflictLine;
       const ctxLines = rawLines.slice(pos, end);
       if (ctxLines.length > 0) {
@@ -56,9 +54,8 @@ export function parseSegments(merged: string): Segment[] {
 
     if (sections[si] && pos === nextConflictLine) {
       segs.push({ kind: "conflict", section: sections[si] });
-      // Advance pos past the conflict block
       const sec = sections[si];
-      pos += 1 + sec.oursLines.length + 1 + sec.theirsLines.length + 1; // <<<, ours, ===, theirs, >>>
+      pos += 1 + sec.oursLines.length + 1 + sec.theirsLines.length + 1;
       si++;
     }
   }
@@ -66,10 +63,10 @@ export function parseSegments(merged: string): Segment[] {
   return segs;
 }
 
-/** Build final file content from segments + resolutions (Map<conflictIdx, 'ours'|'theirs'>). */
+/** Build final file content from segments + per-conflict states. */
 export function buildResult(
   segs: Segment[],
-  resolutions: Map<number, "ours" | "theirs">
+  states: Map<number, ConflictState>,
 ): string {
   const lines: string[] = [];
 
@@ -77,12 +74,18 @@ export function buildResult(
     if (seg.kind === "context") {
       lines.push(...seg.lines);
     } else {
-      const r = resolutions.get(seg.section.idx);
-      if (r === "ours")   lines.push(...seg.section.oursLines);
-      else if (r === "theirs") lines.push(...seg.section.theirsLines);
-      else {
-        // Unresolved: include conflict markers (will be caught before submit)
-        lines.push(`<<<<<<< ${seg.section.ourLabel}`, ...seg.section.oursLines, "=======", ...seg.section.theirsLines, `>>>>>>> ${seg.section.theirLabel}`);
+      const state = states.get(seg.section.idx);
+      if (state && state.status !== "unresolved" && state.content !== "") {
+        lines.push(...state.content.split("\n"));
+      } else {
+        // Unresolved — preserve conflict markers (caught before submit)
+        lines.push(
+          `<<<<<<< ${seg.section.ourLabel}`,
+          ...seg.section.oursLines,
+          "=======",
+          ...seg.section.theirsLines,
+          `>>>>>>> ${seg.section.theirLabel}`,
+        );
       }
     }
   }

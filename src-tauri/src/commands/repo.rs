@@ -184,6 +184,43 @@ pub async fn open_file_diff_window(
     Ok(())
 }
 
+#[tauri::command]
+pub async fn open_merge_window(
+    app: tauri::AppHandle,
+    repo_path: String,
+) -> Result<(), String> {
+    let label = "merge-resolver";
+
+    if let Some(win) = app.get_webview_window(label) {
+        win.set_focus().ok();
+        return Ok(());
+    }
+
+    // percent-encode the repo path so it's safe in a query string
+    let encoded: String = repo_path.chars().flat_map(|c| {
+        if c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.' | '/') {
+            vec![c]
+        } else {
+            format!("%{:02X}", c as u32).chars().collect()
+        }
+    }).collect();
+
+    tauri::WebviewWindowBuilder::new(
+        &app,
+        label,
+        tauri::WebviewUrl::App(
+            std::path::PathBuf::from(format!("index.html?view=merge&repoPath={}", encoded)),
+        ),
+    )
+    .title("Resolve Conflicts")
+    .inner_size(1400.0, 860.0)
+    .min_inner_size(900.0, 600.0)
+    .center()
+    .build()
+    .map_err(|e| e.to_string())?;
+
+    Ok(())
+}
 
 #[tauri::command]
 pub async fn get_file_content(repo_path: String, file_path: String) -> Result<String, String> {

@@ -7,7 +7,6 @@ import { CommitGraph } from "@/components/graph/CommitGraph";
 import { DetailPanel } from "@/components/layout/DetailPanel";
 import { WelcomeScreen } from "@/components/dialogs/WelcomeScreen";
 import { SettingsDialog } from "@/components/dialogs/SettingsDialog";
-import { MergeWorkspace } from "@/components/merge/MergeWorkspace";
 import { git } from "@/lib/tauri";
 import { toast } from "sonner";
 import type { RepoStatus } from "@/lib/mergeTypes";
@@ -80,8 +79,9 @@ function MergeReadyBanner({
   );
 }
 
-// Conflict banner (conflicts present, resolver not open yet)
-function ConflictBanner({ status, onResolve }: { status: RepoStatus; onResolve: () => void }) {
+// Conflict banner (conflicts present — opens resolver in a new window)
+function ConflictBanner({ repoPath, status }: { repoPath: string; status: RepoStatus }) {
+  const open = () => git.openMergeWindow(repoPath).catch(() => {});
   return (
     <div className="flex items-center gap-3 px-4 py-2 border-b border-yellow-500/20 bg-yellow-950/10 shrink-0">
       <AlertTriangle size={13} className="text-yellow-400 shrink-0" />
@@ -91,7 +91,7 @@ function ConflictBanner({ status, onResolve }: { status: RepoStatus; onResolve: 
           <span className="text-yellow-400/50 font-mono ml-2">{status.operationLabel}</span>
         )}
       </span>
-      <button onClick={onResolve}
+      <button onClick={open}
         className="px-3 py-1 text-xs bg-yellow-700 text-white rounded hover:bg-yellow-600 transition-colors">
         Resolve Conflicts
       </button>
@@ -105,7 +105,6 @@ export default function App() {
   const { activeRepo, settings, setSelectedCommitHash } = useAppStore();
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [mergeStatus, setMergeStatus]   = useState<RepoStatus | null>(null);
-  const [showResolver, setShowResolver] = useState(false);
 
   useEffect(() => {
     document.documentElement.classList.toggle("light", settings.theme === "light");
@@ -113,20 +112,13 @@ export default function App() {
   }, [settings.theme, settings.fontSize]);
 
   const refreshMergeStatus = useCallback(async () => {
-    if (!activeRepo) { setMergeStatus(null); setShowResolver(false); return; }
+    if (!activeRepo) { setMergeStatus(null); return; }
     try {
       const s = await git.getRepoStatus(activeRepo.path);
       const active = s.operation !== "Clean" || s.conflictedFiles.length > 0;
-      if (active) {
-        setMergeStatus(s);
-        if (s.conflictedFiles.length > 0) setShowResolver(true);
-      } else {
-        setMergeStatus(null);
-        setShowResolver(false);
-      }
+      setMergeStatus(active ? s : null);
     } catch {
       setMergeStatus(null);
-      setShowResolver(false);
     }
   }, [activeRepo]);
 
@@ -175,27 +167,14 @@ export default function App() {
           onDone={refreshMergeStatus}
         />
       )}
-      {hasConflicts && !showResolver && (
-        <ConflictBanner status={mergeStatus!} onResolve={() => setShowResolver(true)} />
+      {hasConflicts && activeRepo && (
+        <ConflictBanner repoPath={activeRepo.path} status={mergeStatus!} />
       )}
 
       <div className="flex flex-1 min-h-0 overflow-hidden">
         {!activeRepo ? (
           <WelcomeScreen />
-        ) : showResolver && mergeStatus && hasConflicts ? (
-          // Full-screen conflict resolver
-          <>
-            <Sidebar onOperationComplete={refreshMergeStatus} />
-            <div className="flex-1 min-w-0 overflow-hidden">
-              <MergeWorkspace
-                repoPath={activeRepo.path}
-                status={mergeStatus}
-                onDone={() => { setShowResolver(false); refreshMergeStatus(); }}
-              />
-            </div>
-          </>
         ) : (
-          // Normal commit graph view
           <>
             <Sidebar onOperationComplete={refreshMergeStatus} />
             <CommitGraph />

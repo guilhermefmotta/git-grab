@@ -45,8 +45,15 @@ export interface ConflictSection {
   theirsLines: string[];
 }
 
-export type Resolution = "ours" | "theirs";
-
 export type Segment =
   | { kind: "context"; lines: string[]; firstLine: number }
   | { kind: "conflict"; section: ConflictSection };
+
+// ── Conflict resolution state ─────────────────────────────────────────────────
+
+export type ConflictStatus = "unresolved" | "ours" | "theirs" | "both" | "manual";
+
+export interface ConflictState {
+  status: ConflictStatus;
+  content: string;
+}
