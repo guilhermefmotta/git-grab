@@ -91,9 +91,13 @@ function BranchItem({
         <ContextMenuItem onClick={() => onPush(branch.name)}>Push to remote</ContextMenuItem>
         <ContextMenuSeparator />
         <ContextMenuItem onClick={() => onRename(branch)}>Rename</ContextMenuItem>
-        {!branch.is_head && (
-          <ContextMenuItem destructive onClick={() => onDelete(branch)}>Delete</ContextMenuItem>
-        )}
+        <ContextMenuItem
+          destructive
+          disabled={branch.is_head}
+          onClick={() => !branch.is_head && onDelete(branch)}
+        >
+          Delete{branch.is_head ? " (checkout another branch first)" : ""}
+        </ContextMenuItem>
         <ContextMenuSeparator />
         <ContextMenuItem onClick={() => {
           navigator.clipboard.writeText(branch.name);
