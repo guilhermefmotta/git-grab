@@ -1,6 +1,7 @@
 import { useCallback, useEffect } from "react";
 import { git } from "@/lib/tauri";
 import { useAppStore } from "@/store/appStore";
+import { toast } from "sonner";
 
 export function useCommits() {
   const {
@@ -29,8 +30,8 @@ export function useCommits() {
         } else {
           appendCommits(result);
         }
-      } catch {
-        // silently fail
+      } catch (e) {
+        toast.error(`Failed to load commits: ${e}`);
       } finally {
         setLoadingCommits(false);
       }

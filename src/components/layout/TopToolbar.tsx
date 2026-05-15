@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import {
   GitBranch,
+  GitMerge,
   Download,
   Upload,
   RefreshCw,
@@ -24,6 +25,7 @@ import { useStatus } from "@/hooks/useStatus";
 import { useRepo } from "@/hooks/useRepo";
 import { CloneDialog } from "@/components/dialogs/CloneDialog";
 import { BranchDialog } from "@/components/dialogs/BranchDialog";
+import { MergeDialog } from "@/components/dialogs/MergeDialog";
 import { ConfirmDialog } from "@/components/dialogs/ConfirmDialog";
 
 function ToolbarButton({
@@ -158,6 +160,7 @@ export function TopToolbar({ onOpenSettings }: Props) {
   const [pushing, setPushing] = useState(false);
   const [cloneOpen, setCloneOpen] = useState(false);
   const [branchOpen, setBranchOpen] = useState(false);
+  const [mergeOpen, setMergeOpen] = useState(false);
   const [forcePushConfirm, setForcePushConfirm] = useState(false);
   const [undoConfirm, setUndoConfirm] = useState(false);
 
@@ -344,12 +347,18 @@ export function TopToolbar({ onOpenSettings }: Props) {
         />
       </div>
 
-      {/* Branch / Stash / Pop */}
+      {/* Branch / Merge / Stash / Pop */}
       <div className="flex items-center px-2 gap-1">
         <ToolbarButton
           icon={GitBranch}
           label="Branch"
           onClick={() => setBranchOpen(true)}
+          disabled={disabled}
+        />
+        <ToolbarButton
+          icon={GitMerge}
+          label="Merge"
+          onClick={() => setMergeOpen(true)}
           disabled={disabled}
         />
         <ToolbarButton
@@ -385,6 +394,7 @@ export function TopToolbar({ onOpenSettings }: Props) {
 
       <CloneDialog open={cloneOpen} onClose={() => setCloneOpen(false)} />
       <BranchDialog open={branchOpen} onClose={() => setBranchOpen(false)} />
+      <MergeDialog open={mergeOpen} onClose={() => setMergeOpen(false)} onRefresh={refresh} />
 
       <ConfirmDialog
         open={forcePushConfirm}

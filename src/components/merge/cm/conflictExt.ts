@@ -120,7 +120,7 @@ export const phantomLinesField = StateField.define<PhantomSpec[]>({
   },
 });
 
-// ── Decoration plugin for center pane ────────────────────────────────────────
+// ── Decoration plugin for center pane (line decorations only — no block) ─────
 
 export const centerConflictPlugin = ViewPlugin.fromClass(class {
   decorations: DecorationSet;
@@ -135,7 +135,6 @@ export const centerConflictPlugin = ViewPlugin.fromClass(class {
 
   build(view: EditorView): DecorationSet {
     const ranges = view.state.field(conflictRangesField);
-    const phantoms = view.state.field(phantomLinesField);
     const decos: Range<Decoration>[] = [];
     const doc = view.state.doc;
 
@@ -143,25 +142,20 @@ export const centerConflictPlugin = ViewPlugin.fromClass(class {
       if (r.markerFrom >= doc.length || r.markerTo > doc.length) continue;
 
       if (r.status === "unresolved") {
-        // <<<<<<< line
         const mLine = doc.lineAt(r.markerFrom);
         decos.push(Decoration.line({ class: "cm-conflict-marker" }).range(mLine.from));
-        // ours lines
         const oStart = doc.lineAt(r.oursFrom);
         const oEnd   = doc.lineAt(Math.max(r.oursFrom, r.oursTo - 1));
         for (let l = oStart.number; l <= oEnd.number; l++) {
           decos.push(Decoration.line({ class: "cm-conflict-ours" }).range(doc.line(l).from));
         }
-        // ======= line
         const sLine = doc.lineAt(r.sepFrom);
         decos.push(Decoration.line({ class: "cm-conflict-sep" }).range(sLine.from));
-        // theirs lines
         const tStart = doc.lineAt(r.theirsFrom);
         const tEnd   = doc.lineAt(Math.max(r.theirsFrom, r.theirsTo - 1));
         for (let l = tStart.number; l <= tEnd.number; l++) {
           decos.push(Decoration.line({ class: "cm-conflict-theirs" }).range(doc.line(l).from));
         }
-        // >>>>>>> line
         const eLine = doc.lineAt(Math.min(r.markerTo - 1, doc.length - 1));
         decos.push(Decoration.line({ class: "cm-conflict-marker" }).range(eLine.from));
       } else {
@@ -178,7 +172,19 @@ export const centerConflictPlugin = ViewPlugin.fromClass(class {
       }
     }
 
-    // Phantom lines (for alignment)
+    decos.sort((a, b) => a.from - b.from);
+    return Decoration.set(decos, true);
+  }
+}, { decorations: v => v.decorations });
+
+// ── Phantom block decorations for center pane (StateField — block allowed) ────
+
+export const centerPhantomDecoField = StateField.define<DecorationSet>({
+  create() { return Decoration.none; },
+  update(_deco, tr) {
+    const phantoms = tr.state.field(phantomLinesField);
+    const doc = tr.state.doc;
+    const decos: Range<Decoration>[] = [];
     for (const ph of phantoms) {
       const safePos = Math.min(ph.pos, doc.length);
       decos.push(
@@ -186,12 +192,11 @@ export const centerConflictPlugin = ViewPlugin.fromClass(class {
           .range(safePos),
       );
     }
-
-    // Sort by position (required by CM)
     decos.sort((a, b) => a.from - b.from);
     return Decoration.set(decos, true);
-  }
-}, { decorations: v => v.decorations });
+  },
+  provide: f => EditorView.decorations.from(f),
+});
 
 // ── Side-pane highlight plugin (read-only left/right) ────────────────────────
 
@@ -234,6 +239,22 @@ export const sidePanePlugin = ViewPlugin.fromClass(class {
           decos.push(Decoration.line({ class: cls }).range(doc.line(l).from));
         } catch {}
       }
+    }
+
+    decos.sort((a, b) => a.from - b.from);
+    return Decoration.set(decos, true);
+  }
+}, { decorations: v => v.decorations });
+
+// ── Phantom block decorations for side panes (StateField — block allowed) ─────
+
+export const sidePanePhantomDecoField = StateField.define<DecorationSet>({
+  create() { return Decoration.none; },
+  update(_deco, tr) {
+    const conflicts = tr.state.field(sidePaneConflictsField);
+    const doc = tr.state.doc;
+    const decos: Range<Decoration>[] = [];
+    for (const c of conflicts) {
       if (c.phantomAfter > 0) {
         try {
           const endPos = doc.line(Math.min(c.endLine, doc.lines)).to;
@@ -244,8 +265,8 @@ export const sidePanePlugin = ViewPlugin.fromClass(class {
         } catch {}
       }
     }
-
     decos.sort((a, b) => a.from - b.from);
     return Decoration.set(decos, true);
-  }
-}, { decorations: v => v.decorations });
+  },
+  provide: f => EditorView.decorations.from(f),
+});

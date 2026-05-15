@@ -25,9 +25,9 @@ import { parseSegments } from "@/lib/conflictParser";
 import type { ConflictContent, ConflictStatus } from "@/lib/mergeTypes";
 import { getLanguage } from "./cm/lang";
 import {
-  conflictRangesField, centerConflictPlugin, setConflictRanges,
+  conflictRangesField, centerConflictPlugin, centerPhantomDecoField, setConflictRanges,
   phantomLinesField, setPhantomLines, parseConflictRanges,
-  sidePaneConflictsField, sidePanePlugin, setSidePaneConflicts,
+  sidePaneConflictsField, sidePanePlugin, sidePanePhantomDecoField, setSidePaneConflicts,
   type ConflictRange, type SidePaneConflict,
 } from "./cm/conflictExt";
 import { makeReadonlyEditor, makeEditableEditor } from "./cm/editor";
@@ -159,7 +159,7 @@ export function ThreePaneEditor({
     () => [...conflictStateMap.values()].filter(v => v !== "unresolved").length,
     [conflictStateMap],
   );
-  const allDone = resolvedCount === total && total > 0;
+  const allDone = resolvedCount === total; // total=0 means diffy resolved cleanly
 
   // ── Compute phantom lines for alignment ───────────────────────────────────
   const phantomData = useMemo(() => {
@@ -229,6 +229,7 @@ export function ThreePaneEditor({
     leftView.current = makeReadonlyEditor(leftRef.current, content.ours, [
       ...sharedExtras,
       sidePaneConflictsField,
+      sidePanePhantomDecoField,
       sidePanePlugin,
     ]);
 
@@ -237,6 +238,7 @@ export function ThreePaneEditor({
       ...sharedExtras,
       conflictRangesField,
       phantomLinesField,
+      centerPhantomDecoField,
       centerConflictPlugin,
     ], (doc) => {
       setCenterDoc(doc);
@@ -248,6 +250,7 @@ export function ThreePaneEditor({
     rightView.current = makeReadonlyEditor(rightRef.current, content.theirs, [
       ...sharedExtras,
       sidePaneConflictsField,
+      sidePanePhantomDecoField,
       sidePanePlugin,
     ]);
 
@@ -515,28 +518,38 @@ export function ThreePaneEditor({
         <div className="px-3 py-1.5 text-blue-400/80">Remote (Theirs)</div>
       </div>
 
-      {/* Floating conflict action bar — rendered over the editors */}
       <div className="flex-1 overflow-y-auto min-h-0 relative" ref={scrollContainerRef}>
         <div className="grid grid-cols-3 min-h-full">
-          {/* Left pane */}
-          <div ref={leftRef} className="overflow-hidden border-r border-border/20" />
-
-          {/* Center pane */}
-          <div className="relative overflow-hidden border-x border-border/20">
-            <div ref={centerRef} />
-
-            {/* Per-conflict floating action buttons */}
-            <ConflictActionOverlay
-              centerView={centerView}
-              centerDoc={centerDoc}
-              initialConflicts={initialConflicts}
+          {/* Left pane — Accept Local button on the right edge */}
+          <div className="relative overflow-hidden border-r border-border/20">
+            <div ref={leftRef} />
+            <SidePaneOverlay
+              paneView={leftView}
+              conflicts={sideRanges.oursConflicts}
+              conflictStateMap={conflictStateMap}
+              side="ours"
               onActivate={setActiveConflict}
               onAccept={acceptConflict}
             />
           </div>
 
-          {/* Right pane */}
-          <div ref={rightRef} className="overflow-hidden border-l border-border/20" />
+          {/* Center pane — editable result */}
+          <div className="relative overflow-hidden border-x border-border/20">
+            <div ref={centerRef} />
+          </div>
+
+          {/* Right pane — Accept Remote button on the left edge */}
+          <div className="relative overflow-hidden border-l border-border/20">
+            <div ref={rightRef} />
+            <SidePaneOverlay
+              paneView={rightView}
+              conflicts={sideRanges.theirsConflicts}
+              conflictStateMap={conflictStateMap}
+              side="theirs"
+              onActivate={setActiveConflict}
+              onAccept={acceptConflict}
+            />
+          </div>
         </div>
       </div>
 
@@ -556,7 +569,9 @@ export function ThreePaneEditor({
         })}
         <span className="text-[10px] text-muted-foreground flex-1 text-right">
           {allDone
-            ? "All resolved — click Stage File"
+            ? total === 0
+              ? "No conflicts — click Stage File"
+              : "All resolved — click Stage File"
             : `${unresolvedTotal} conflict${unresolvedTotal !== 1 ? "s" : ""} remaining`}
         </span>
       </div>
@@ -564,98 +579,76 @@ export function ThreePaneEditor({
   );
 }
 
-// ── Per-conflict floating action buttons ──────────────────────────────────────
+// ── Accept button overlaid on side panes ─────────────────────────────────────
 
-function ConflictActionOverlay({
-  centerView, centerDoc, initialConflicts, onActivate, onAccept,
+function SidePaneOverlay({
+  paneView, conflicts, conflictStateMap, side, onActivate, onAccept,
 }: {
-  centerView: React.RefObject<EditorView | null>;
-  centerDoc: string;
-  initialConflicts: Array<{ idx: number; ourLabel: string; theirLabel: string; oursLines: string[]; theirsLines: string[] }>;
+  paneView: React.RefObject<EditorView | null>;
+  conflicts: SidePaneConflict[];
+  conflictStateMap: Map<number, ConflictStatus>;
+  side: "ours" | "theirs";
   onActivate: (i: number) => void;
-  onAccept: (i: number, kind: "ours" | "theirs" | "both") => void;
+  onAccept: (i: number, kind: "ours" | "theirs") => void;
 }) {
-  const [positions, setPositions] = useState<{ top: number; idx: number; isResolved: boolean }[]>([]);
+  const [positions, setPositions] = useState<{ top: number; idx: number }[]>([]);
 
   useEffect(() => {
-    const cv = centerView.current;
-    if (!cv) return;
+    const view = paneView.current;
+    if (!view) return;
 
     const update = () => {
-      const ranges = cv.state.field(conflictRangesField);
-      const newPositions = ranges.map(r => {
+      const newPos = conflicts.map((c, i) => {
         try {
-          const block = cv.lineBlockAt(r.markerFrom);
-          return { top: block.top, idx: r.idx, isResolved: r.status !== "unresolved" };
-        } catch {
-          return null;
-        }
-      }).filter(Boolean) as { top: number; idx: number; isResolved: boolean }[];
-      setPositions(newPositions);
+          const startLine = Math.max(1, Math.min(c.startLine, view.state.doc.lines));
+          const lineFrom = view.state.doc.line(startLine).from;
+          return { top: view.lineBlockAt(lineFrom).top, idx: i };
+        } catch { return null; }
+      }).filter(Boolean) as { top: number; idx: number }[];
+      setPositions(newPos);
     };
 
     update();
-    const observer = new MutationObserver(update);
-    observer.observe(cv.dom, { childList: true, subtree: true, characterData: true });
-    cv.scrollDOM.addEventListener("scroll", update, { passive: true });
-    return () => {
-      observer.disconnect();
-      cv.scrollDOM.removeEventListener("scroll", update);
-    };
-  }, [centerView, centerDoc]);
+    const obs = new MutationObserver(update);
+    obs.observe(view.dom, { childList: true, subtree: true });
+    view.scrollDOM.addEventListener("scroll", update, { passive: true });
+    return () => { obs.disconnect(); view.scrollDOM.removeEventListener("scroll", update); };
+  }, [paneView, conflicts]);
+
+  const isOurs = side === "ours";
 
   return (
     <>
-      {positions.map(({ top, idx, isResolved }) => {
-        const ic = initialConflicts[idx];
-        if (!ic) return null;
-        const hasOurs   = ic.oursLines.length > 0;
-        const hasTheirs = ic.theirsLines.length > 0;
-        const i = idx; // since we process in order
-
-        return (
-          <div
-            key={idx}
-            style={{ position: "absolute", top: top - 1, right: 0, zIndex: 10 }}
-            onClick={() => onActivate(i)}
-          >
-            {!isResolved && (
-              <div className="flex items-center gap-1 px-1.5 py-0.5 bg-card/90 backdrop-blur border border-yellow-500/20 rounded-bl text-[9px] shadow-md">
-                {hasOurs && (
-                  <button
-                    onClick={e => { e.stopPropagation(); onAccept(i, "ours"); }}
-                    className="text-green-400 hover:text-green-200 hover:bg-green-900/40 rounded px-1 py-0.5 transition-colors flex items-center gap-0.5"
-                    title="Accept Local"
-                  >
-                    <ChevronsRight size={10} /> Local
-                  </button>
-                )}
-                {hasOurs && hasTheirs && (
-                  <button
-                    onClick={e => { e.stopPropagation(); onAccept(i, "both"); }}
-                    className="text-purple-400 hover:text-purple-200 hover:bg-purple-900/30 rounded px-1 py-0.5 transition-colors"
-                    title="Accept Both"
-                  >
-                    Both
-                  </button>
-                )}
-                {hasTheirs && (
-                  <button
-                    onClick={e => { e.stopPropagation(); onAccept(i, "theirs"); }}
-                    className="text-blue-400 hover:text-blue-200 hover:bg-blue-900/40 rounded px-1 py-0.5 transition-colors flex items-center gap-0.5"
-                    title="Accept Remote"
-                  >
-                    Remote <ChevronsLeft size={10} />
-                  </button>
-                )}
-              </div>
-            )}
-            {isResolved && (
-              <div className="flex items-center gap-0.5 px-1.5 py-0.5 bg-green-950/80 border border-green-700/20 rounded-bl text-[9px]">
+      {positions.map(({ top, idx }) => {
+        const status = conflictStateMap.get(idx) ?? "unresolved";
+        if (status !== "unresolved") {
+          return (
+            <div key={idx} style={{ position: "absolute", top, [isOurs ? "right" : "left"]: 0, zIndex: 10 }}>
+              <div className="px-1.5 py-0.5 bg-green-950/70 border border-green-700/20 text-[9px]">
                 <CheckCircle size={8} className="text-green-400" />
               </div>
+            </div>
+          );
+        }
+
+        return (
+          <button
+            key={idx}
+            style={{ position: "absolute", top, [isOurs ? "right" : "left"]: 0, zIndex: 10 }}
+            onClick={() => { onActivate(idx); onAccept(idx, side); }}
+            title={isOurs ? "Accept Local (ours)" : "Accept Remote (theirs)"}
+            className={cn(
+              "flex items-center gap-0.5 px-1.5 py-0.5 text-[9px] font-medium",
+              "bg-card/90 backdrop-blur shadow-sm border transition-colors",
+              isOurs
+                ? "text-green-400 hover:text-green-200 hover:bg-green-900/60 border-green-700/30 rounded-br"
+                : "text-blue-400 hover:text-blue-200 hover:bg-blue-900/60 border-blue-700/30 rounded-bl",
             )}
-          </div>
+          >
+            {isOurs
+              ? <><ChevronsRight size={9} /> Accept</>
+              : <>Accept <ChevronsLeft size={9} /></>}
+          </button>
         );
       })}
     </>

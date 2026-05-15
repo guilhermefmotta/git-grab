@@ -102,7 +102,7 @@ function ConflictBanner({ repoPath, status }: { repoPath: string; status: RepoSt
 // ── App ───────────────────────────────────────────────────────────────────────
 
 export default function App() {
-  const { activeRepo, settings, setSelectedCommitHash } = useAppStore();
+  const { activeRepo, settings, setSelectedCommitHash, status: fileStatus } = useAppStore();
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [mergeStatus, setMergeStatus]   = useState<RepoStatus | null>(null);
 
@@ -122,7 +122,9 @@ export default function App() {
     }
   }, [activeRepo]);
 
+  // Refresh on repo change and whenever file status changes (catches post-merge conflicts)
   useEffect(() => { refreshMergeStatus(); }, [activeRepo?.path]);
+  useEffect(() => { if (activeRepo) refreshMergeStatus(); }, [fileStatus]);
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -152,7 +154,8 @@ export default function App() {
     },
   };
 
-  const hasConflicts = (mergeStatus?.conflictedFiles.length ?? 0) > 0;
+  // Derive conflict state from fileStatus (same source as WorkingTree) — always accurate
+  const hasConflicts = fileStatus.some(f => f.status === "conflicted");
   const mergeReady   = mergeStatus !== null && !hasConflicts;
 
   return (
@@ -167,8 +170,8 @@ export default function App() {
           onDone={refreshMergeStatus}
         />
       )}
-      {hasConflicts && activeRepo && (
-        <ConflictBanner repoPath={activeRepo.path} status={mergeStatus!} />
+      {hasConflicts && activeRepo && mergeStatus && (
+        <ConflictBanner repoPath={activeRepo.path} status={mergeStatus} />
       )}
 
       <div className="flex flex-1 min-h-0 overflow-hidden">

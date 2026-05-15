@@ -2,7 +2,7 @@
 
 A fast, native Git GUI client built with Tauri, Rust, and React.
 
-![Version](https://img.shields.io/badge/version-0.1.0-blue)
+![Version](https://img.shields.io/badge/version-0.3.0-blue)
 ![Tauri](https://img.shields.io/badge/Tauri-2-orange)
 ![Rust](https://img.shields.io/badge/Rust-git2-brown)
 ![License](https://img.shields.io/badge/license-MIT-green)
@@ -26,7 +26,6 @@ A fast, native Git GUI client built with Tauri, Rust, and React.
 - **Double-click** any file → full-screen side-by-side diff in a new window
 - Manual refresh button (no polling)
 - Add files to `.gitignore` from context menu
-- Open files in system editor
 
 ### Diff Viewer
 - **Side-by-side layout** — deletions left, additions right
@@ -34,11 +33,27 @@ A fast, native Git GUI client built with Tauri, Rust, and React.
 - Hunk headers, color-coded backgrounds
 - Shown inline (preview strip) or in a dedicated full-screen window
 
-### Conflict Resolution
-- Visual 3-way conflict editor — **Ours** (green) vs **Theirs** (blue)
-- Per-conflict resolution: Accept Ours / Accept Theirs / Accept Both
-- "Mark as Resolved & Stage" writes the result and stages the file
-- Progress counter: resolved / total
+### Conflict Resolution (IntelliJ-style)
+- **3-pane merge editor** — Ours (left/green) · Merged result (center, editable) · Theirs (right/blue)
+- Per-conflict gutter arrow buttons: Accept Ours / Accept Theirs / Accept Both
+- Navigate between conflicts with Prev / Next buttons
+- Bulk resolution: **All Ours** / **All Theirs** toolbar buttons
+- Progress counter: resolved / total conflicts
+- Undo / Redo full conflict history
+- "Mark as Resolved & Stage" writes result and stages the file
+- Skip to next conflicted file without resolving current
+- Abort merge/rebase — restores repo to pre-merge state
+- Phantom alignment lines keep all three panes vertically in sync
+- Syntax highlighting per file type (Rust, TypeScript, Python, Go, and more)
+- **Conflict banner** in main view when conflicts exist → one-click to open resolver
+- **Merge-ready banner** when all conflicts resolved → commit or continue directly from main view
+
+### Merge
+- Merge any local or remote branch into current via toolbar Merge button
+- Searchable branch picker with Local / Remote grouping
+- Handles fast-forward and merge commits
+- Detects conflicts on merge → auto-opens conflict resolver
+- Continue or abort in-progress merge/rebase operations directly from main view
 
 ### Branch Management
 - Full local branch list with ahead/behind indicators
@@ -93,9 +108,11 @@ A fast, native Git GUI client built with Tauri, Rust, and React.
 | Git backend | [git2](https://crates.io/crates/git2) (libgit2 bindings) |
 | UI framework | React 18 + TypeScript |
 | Styling | Tailwind CSS + Radix UI |
+| Code editor | CodeMirror 6 |
 | State | Zustand |
 | Virtual list | react-virtuoso |
 | Notifications | sonner |
+| Logging | tauri-plugin-log |
 
 ---
 
@@ -110,10 +127,7 @@ A fast, native Git GUI client built with Tauri, Rust, and React.
 ### Development
 
 ```bash
-# Install frontend dependencies
 npm install
-
-# Start dev server (hot-reload frontend + Rust recompile)
 npm run tauri dev
 ```
 
@@ -125,6 +139,36 @@ npm run tauri build
 
 Output binary is in `src-tauri/target/release/`.
 
+### Type Check
+
+```bash
+npm run typecheck
+```
+
+---
+
+## Testing
+
+End-to-end tests use [WebdriverIO](https://webdriver.io/) + [`@crabnebula/tauri-driver`](https://www.npmjs.com/package/@crabnebula/tauri-driver).
+
+### Prerequisites (Linux)
+
+```bash
+sudo apt-get install -y webkit2gtk-driver
+```
+
+### Run Tests
+
+```bash
+# Build debug binary first (required for tauri-driver)
+npm run tauri build -- --debug
+
+# Run E2E tests
+npm run test:e2e
+```
+
+Screenshots are saved to `tests/screenshots/` after each run.
+
 ---
 
 ## Architecture
@@ -134,39 +178,52 @@ src/                        # React frontend
 ├── components/
 │   ├── layout/             # TopToolbar, Sidebar
 │   ├── graph/              # CommitGraph, branch visualization
-│   ├── detail/             # WorkingTree, DiffViewer, ConflictViewer
-│   └── dialogs/            # Branch, Tag, Reset, Settings dialogs
+│   ├── detail/             # WorkingTree, DiffViewer
+│   ├── merge/              # ThreePaneEditor, CodeMirror extensions
+│   └── dialogs/            # Branch, Tag, Reset, Clone, Merge, Settings dialogs
 ├── hooks/                  # useCommits, useBranches, useStatus, useRepo
 ├── store/                  # Zustand global state (appStore)
-├── lib/                    # tauri.ts (IPC), types.ts, utils.ts
-├── App.tsx
-├── CommitDiffWindow.tsx     # Standalone commit diff window
-└── FileDiffWindow.tsx       # Standalone file diff window
+├── lib/                    # tauri.ts (IPC), types.ts, mergeTypes.ts, conflictParser.ts
+├── App.tsx                 # Root with merge/conflict banners
+├── CommitDiffWindow.tsx    # Standalone commit diff window
+├── FileDiffWindow.tsx      # Standalone file diff window
+└── MergeWindow.tsx         # Standalone 3-pane conflict resolver window
 
 src-tauri/src/              # Rust backend
-├── commands/               # Tauri IPC commands
+├── commands/
 │   ├── repo.rs             # Open, init, clone, recent repos, windows
 │   ├── log.rs              # Commit history with branch filter
 │   ├── diff.rs             # Staged / unstaged / commit diffs
 │   ├── status.rs           # Working tree status, stage, discard, ignore
 │   ├── commit.rs           # Commit, amend, undo, cherry-pick, revert, reset
 │   ├── branch.rs           # Branch CRUD, checkout, merge, rebase
+│   ├── merge.rs            # Merge, conflict detection, resolve, abort, continue
 │   ├── remote.rs           # Fetch, pull, push
 │   ├── stash.rs            # Stash list, create, apply, pop, drop
 │   └── tag.rs              # Tag list, create, delete
 └── git/
-    ├── graph.rs             # Branch graph column computation
-    └── types.rs             # Shared data types
+    ├── graph.rs            # Branch graph column computation
+    └── types.rs            # Shared data types
+
+tests/
+└── e2e/                    # WebdriverIO E2E tests
+    └── screenshots/        # Captured screenshots per test run
 ```
 
 ---
 
-## Recent repos
-
-Git Crab stores the list of recently opened repositories in:
+## Recent Repos
 
 | Platform | Path |
 |---|---|
 | Linux | `~/.config/git_crab/recent.json` |
 | macOS | `~/Library/Application Support/git_crab/recent.json` |
 | Windows | `%APPDATA%\git_crab\recent.json` |
+
+## Logs
+
+| Platform | Path |
+|---|---|
+| Linux | `~/.local/share/git-crab/logs/` |
+| macOS | `~/Library/Logs/git-crab/` |
+| Windows | `%APPDATA%\git-crab\logs\` |

@@ -228,12 +228,15 @@ export function WorkingTree() {
     <div className="flex flex-col h-full">
       {/* Conflict banner */}
       {hasConflicts && (
-        <div className="flex items-center gap-2 px-3 py-2 bg-destructive/10 border-b border-destructive/20 shrink-0">
+        <button
+          onClick={() => activeRepo && git.openMergeWindow(activeRepo.path).catch(() => {})}
+          className="flex items-center gap-2 px-3 py-2 bg-destructive/10 border-b border-destructive/20 shrink-0 w-full text-left hover:bg-destructive/20 transition-colors"
+        >
           <AlertTriangle size={13} className="text-destructive shrink-0" />
           <span className="text-xs text-destructive font-medium">
             {conflicted.length} file{conflicted.length !== 1 ? "s" : ""} with conflicts — click to resolve
           </span>
-        </div>
+        </button>
       )}
 
       {/* Toolbar */}

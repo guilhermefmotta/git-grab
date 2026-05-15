@@ -1,4 +1,4 @@
-use git2::{BranchType, Repository, Signature, StashApplyOptions, StashFlags};
+use git2::{BranchType, Repository, Signature, StashApplyOptions, StashFlags, Status};
 use serde::{Deserialize, Serialize};
 
 // ── Types ──────────────────────────────────────────────────────────────────────
@@ -65,22 +65,14 @@ fn blob_text(repo: &Repository, oid: git2::Oid) -> Option<String> {
 
 
 pub fn conflicted_paths(repo: &Repository) -> Result<Vec<String>, String> {
-    let mut index = repo.index().map_err(|e| e.message().to_string())?;
-    index.read(true).ok();
-    let conflicts = index.conflicts().map_err(|e| e.message().to_string())?;
-    let mut paths: Vec<String> = Vec::new();
-    for c in conflicts {
-        let c = c.map_err(|e| e.message().to_string())?;
-        let path = c.our.as_ref()
-            .or(c.their.as_ref())
-            .or(c.ancestor.as_ref())
-            .and_then(|e| std::str::from_utf8(&e.path).ok().map(String::from));
-        if let Some(p) = path {
-            if !paths.contains(&p) {
-                paths.push(p);
-            }
-        }
-    }
+    // Use Status::CONFLICTED flag — same source as get_status(), reliable after
+    // repo.merge() even if index stages haven't been flushed to disk yet.
+    let statuses = repo.statuses(None).map_err(|e| e.message().to_string())?;
+    let paths = statuses
+        .iter()
+        .filter(|e| e.status().contains(Status::CONFLICTED))
+        .filter_map(|e| e.path().map(String::from))
+        .collect();
     Ok(paths)
 }
 
@@ -141,16 +133,19 @@ fn run_git(workdir: &std::path::Path, args: &[&str]) -> Result<String, String> {
     }
 }
 
+fn force_conflict_block(ours: &str, theirs: &str, our_label: &str, their_label: &str) -> String {
+    let ours_nl   = if ours.is_empty() || ours.ends_with('\n')   { "" } else { "\n" };
+    let theirs_nl = if theirs.is_empty() || theirs.ends_with('\n') { "" } else { "\n" };
+    format!("<<<<<<< {our_label}\n{ours}{ours_nl}=======\n{theirs}{theirs_nl}>>>>>>> {their_label}\n")
+}
+
 fn build_merged(ancestor: &str, ours: &str, theirs: &str, our_label: &str, their_label: &str) -> String {
-    if ours.contains("<<<<<<<") || theirs.contains("<<<<<<<") {
-        // Nested markers — can't feed into diffy; wrap as single conflict
-        let ours_nl   = if ours.ends_with('\n')   { "" } else { "\n" };
-        let theirs_nl = if theirs.ends_with('\n') { "" } else { "\n" };
-        return format!(
-            "<<<<<<< {our_label}\n{ours}{ours_nl}=======\n{theirs}{theirs_nl}>>>>>>> {their_label}\n"
-        );
+    // Nested markers or one side entirely absent — can't feed into diffy safely
+    if ours.contains("<<<<<<<") || theirs.contains("<<<<<<<")
+        || ours.is_empty() || theirs.is_empty()
+    {
+        return force_conflict_block(ours, theirs, our_label, their_label);
     }
-    // Always use diffy — it handles empty ours/theirs correctly via proper 3-way diff
     let mut opts = diffy::MergeOptions::new();
     opts.set_conflict_style(diffy::ConflictStyle::Merge);
     match opts.merge(ancestor, ours, theirs) {
@@ -407,7 +402,8 @@ pub async fn do_merge(repo_path: String, branch_name: String) -> Result<MergeOut
 
     let branch = repo
         .find_branch(&branch_name, BranchType::Local)
-        .map_err(|e| e.message().to_string())?;
+        .or_else(|_| repo.find_branch(&branch_name, BranchType::Remote))
+        .map_err(|_| format!("cannot locate branch '{branch_name}'"))?;
     let annotated = repo
         .reference_to_annotated_commit(branch.get())
         .map_err(|e| e.message().to_string())?;
