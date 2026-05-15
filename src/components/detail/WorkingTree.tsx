@@ -30,7 +30,9 @@ function FileRow({
   onUnstage,
   onDiscard,
   onOpenEditor,
+  onShowInFolder,
   onIgnore,
+  testId,
 }: {
   file: FileStatus;
   icon: React.ElementType;
@@ -44,12 +46,15 @@ function FileRow({
   onUnstage?: () => void;
   onDiscard?: () => void;
   onOpenEditor?: () => void;
+  onShowInFolder?: () => void;
   onIgnore?: () => void;
+  testId?: string;
 }) {
   return (
     <ContextMenu>
       <ContextMenuTrigger asChild>
         <div
+          data-testid={testId}
           onClick={onClick}
           onDoubleClick={onDoubleClick}
           className={cn(
@@ -77,7 +82,10 @@ function FileRow({
         {onUnstage && <ContextMenuItem onClick={onUnstage}>Unstage file</ContextMenuItem>}
         {(onStage || onUnstage) && <ContextMenuSeparator />}
         {onOpenEditor && (
-          <ContextMenuItem onClick={onOpenEditor}>Open in editor</ContextMenuItem>
+          <ContextMenuItem data-testid="file-open-editor-menuitem" onClick={onOpenEditor}>Open in editor</ContextMenuItem>
+        )}
+        {onShowInFolder && (
+          <ContextMenuItem data-testid="file-show-folder-menuitem" onClick={onShowInFolder}>Show in folder</ContextMenuItem>
         )}
         <ContextMenuItem
           onClick={() => {
@@ -199,18 +207,16 @@ export function WorkingTree() {
     }
   };
 
-  const openFileDiff = async (filePath: string, staged: boolean) => {
+  const handleShowInFolder = async (filePath: string) => {
     if (!activeRepo) return;
-    const key = `${staged ? "s" : "u"}_${filePath}`.replace(/[^a-zA-Z0-9_-]/g, "-");
-    const meta = { repoPath: activeRepo.path, filePath, staged };
-    localStorage.setItem(`git_rust_filediff_${key}`, JSON.stringify(meta));
     try {
-      await git.openFileDiffWindow(key, `${filePath} (${staged ? "staged" : "unstaged"})`);
+      const full = `${activeRepo.path}/${filePath}`;
+      const dir = full.includes("/") ? full.substring(0, full.lastIndexOf("/")) : full;
+      await git.showInFolder(dir);
     } catch (e) {
       toast.error(String(e));
     }
   };
-
 
   const handleIgnoreFile = async (filePath: string) => {
     if (!activeRepo) return;
@@ -267,8 +273,10 @@ export function WorkingTree() {
                 iconClass="text-destructive"
                 selected={selectedFilePath === f.path}
                 onClick={() => {}}
-                onDoubleClick={() => {}}
+                onDoubleClick={() => handleOpenEditor(f.path)}
                 onOpenEditor={() => handleOpenEditor(f.path)}
+                onShowInFolder={() => handleShowInFolder(f.path)}
+                testId={`worktree-file-${f.path.replace(/\//g, "-")}`}
               />
             ))}
           </>
@@ -289,11 +297,13 @@ export function WorkingTree() {
             iconClass="text-green-400"
             selected={selectedFilePath === f.path}
             onClick={() => selectFile(f.path, true)}
-            onDoubleClick={() => openFileDiff(f.path, true)}
+            onDoubleClick={() => handleOpenEditor(f.path)}
             action="−"
             onAction={() => unstageFile(f.path)}
             onUnstage={() => unstageFile(f.path)}
             onOpenEditor={() => handleOpenEditor(f.path)}
+            onShowInFolder={() => handleShowInFolder(f.path)}
+            testId={`worktree-file-${f.path.replace(/\//g, "-")}`}
           />
         ))}
 
@@ -312,12 +322,14 @@ export function WorkingTree() {
             iconClass="text-yellow-400"
             selected={selectedFilePath === f.path}
             onClick={() => selectFile(f.path, false)}
-            onDoubleClick={() => openFileDiff(f.path, false)}
+            onDoubleClick={() => handleOpenEditor(f.path)}
             action="+"
             onAction={() => stageFile(f.path)}
             onStage={() => stageFile(f.path)}
             onDiscard={() => setConfirmDiscard(f.path)}
             onOpenEditor={() => handleOpenEditor(f.path)}
+            onShowInFolder={() => handleShowInFolder(f.path)}
+            testId={`worktree-file-${f.path.replace(/\//g, "-")}`}
           />
         ))}
 
@@ -333,12 +345,14 @@ export function WorkingTree() {
                 iconClass="text-muted-foreground"
                 selected={selectedFilePath === f.path}
                 onClick={() => selectFile(f.path, false)}
-                onDoubleClick={() => openFileDiff(f.path, false)}
+                onDoubleClick={() => handleOpenEditor(f.path)}
                 action="+"
                 onAction={() => stageFile(f.path)}
                 onStage={() => stageFile(f.path)}
                 onOpenEditor={() => handleOpenEditor(f.path)}
+                onShowInFolder={() => handleShowInFolder(f.path)}
                 onIgnore={() => handleIgnoreFile(f.path)}
+                testId={`worktree-file-${f.path.replace(/\//g, "-")}`}
               />
             ))}
           </>

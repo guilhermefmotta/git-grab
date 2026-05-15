@@ -135,4 +135,5 @@ export const git = {
 
   // Shell
   openInEditor: (filePath: string) => shellOpen(filePath),
+  showInFolder: (dirPath: string) => shellOpen(dirPath),
 };

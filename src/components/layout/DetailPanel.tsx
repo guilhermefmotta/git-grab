@@ -11,14 +11,14 @@ export function DetailPanel() {
 
   if (!activeRepo) {
     return (
-      <div className="w-80 shrink-0 border-l border-border bg-card flex items-center justify-center">
+      <div className="w-full border-l border-border bg-card flex items-center justify-center">
         <p className="text-xs text-muted-foreground">No repo open</p>
       </div>
     );
   }
 
   return (
-    <div className="w-80 shrink-0 border-l border-border bg-card flex flex-col overflow-hidden">
+    <div className="w-full border-l border-border bg-card flex flex-col overflow-hidden">
       <div className="px-3 py-2 border-b border-border shrink-0">
         <h2 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
           {selectedCommit ? "Commit" : "Working Tree"}

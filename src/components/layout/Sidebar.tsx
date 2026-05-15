@@ -9,6 +9,7 @@ import { useCommits } from "@/hooks/useCommits";
 import { useStatus } from "@/hooks/useStatus";
 import { BranchDialog } from "@/components/dialogs/BranchDialog";
 import { ConfirmDialog } from "@/components/dialogs/ConfirmDialog";
+import { RollbackDialog } from "@/components/dialogs/RollbackDialog";
 import {
   ContextMenu,
   ContextMenuContent,
@@ -45,6 +46,7 @@ function BranchItem({
   onRebase,
   onCreateFrom,
   onPush,
+  onRollback,
 }: {
   branch: BranchInfo;
   onCheckout: (name: string) => void;
@@ -54,11 +56,13 @@ function BranchItem({
   onRebase: (name: string) => void;
   onCreateFrom: (branch: BranchInfo) => void;
   onPush: (name: string) => void;
+  onRollback?: () => void;
 }) {
   return (
     <ContextMenu>
       <ContextMenuTrigger asChild>
         <div
+          data-testid={branch.is_head ? "head-branch-item" : `branch-item-${branch.name}`}
           onDoubleClick={() => !branch.is_head && onCheckout(branch.name)}
           className={cn(
             "flex items-center gap-2 px-4 py-1 text-xs cursor-pointer rounded mx-1 transition-colors group",
@@ -89,6 +93,12 @@ function BranchItem({
         )}
         <ContextMenuSeparator />
         <ContextMenuItem onClick={() => onPush(branch.name)}>Push to remote</ContextMenuItem>
+        {onRollback && (
+          <>
+            <ContextMenuSeparator />
+            <ContextMenuItem destructive data-testid="branch-rollback-menuitem" onClick={onRollback}>Rollback files…</ContextMenuItem>
+          </>
+        )}
         <ContextMenuSeparator />
         <ContextMenuItem onClick={() => onRename(branch)}>Rename</ContextMenuItem>
         <ContextMenuItem
@@ -235,6 +245,8 @@ export function Sidebar({ onOperationComplete }: { onOperationComplete?: () => v
   const [openRemote, setOpenRemote] = useState(true);
   const [openTags, setOpenTags] = useState(false);
   const [openStashes, setOpenStashes] = useState(false);
+
+  const [rollbackOpen, setRollbackOpen] = useState(false);
 
   const [branchDialog, setBranchDialog] = useState<{
     open: boolean; fromHash?: string; fromLabel?: string;
@@ -467,7 +479,7 @@ export function Sidebar({ onOperationComplete }: { onOperationComplete?: () => v
 
   if (!activeRepo) {
     return (
-      <div className="w-60 shrink-0 border-r border-border bg-card flex items-center justify-center">
+      <div className="w-full border-r border-border bg-card flex items-center justify-center">
         <p className="text-xs text-muted-foreground text-center px-4">Open a repository to get started</p>
       </div>
     );
@@ -485,7 +497,7 @@ export function Sidebar({ onOperationComplete }: { onOperationComplete?: () => v
 
   return (
     <>
-      <div className="w-60 shrink-0 border-r border-border bg-card flex flex-col overflow-hidden">
+      <div className="w-full border-r border-border bg-card flex flex-col overflow-hidden">
         <div className="px-3 py-2 border-b border-border">
           <input
             type="text"
@@ -521,6 +533,7 @@ export function Sidebar({ onOperationComplete }: { onOperationComplete?: () => v
                 })
               }
               onPush={handlePush}
+              onRollback={b.is_head ? () => setRollbackOpen(true) : undefined}
             />
           ))}
 
@@ -593,6 +606,13 @@ export function Sidebar({ onOperationComplete }: { onOperationComplete?: () => v
         onClose={() => setBranchDialog({ open: false })}
         fromHash={branchDialog.fromHash}
         fromLabel={branchDialog.fromLabel}
+      />
+
+      <RollbackDialog
+        repoPath={activeRepo.path}
+        open={rollbackOpen}
+        onClose={() => setRollbackOpen(false)}
+        onDone={fullRefresh}
       />
 
       {/* Rename dialog */}

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Toaster } from "sonner";
 import { useAppStore } from "@/store/appStore";
 import { TopToolbar } from "@/components/layout/TopToolbar";
@@ -105,6 +105,40 @@ function ConflictBanner({
   );
 }
 
+// ── Resizable divider ────────────────────────────────────────────────────────
+
+function ResizeDivider({ onDelta, testId }: { onDelta: (dx: number) => void; testId?: string }) {
+  const dragging = useRef(false);
+  const lastX    = useRef(0);
+
+  const onMouseDown = (e: React.MouseEvent) => {
+    e.preventDefault();
+    dragging.current = true;
+    lastX.current    = e.clientX;
+
+    const onMove = (ev: MouseEvent) => {
+      if (!dragging.current) return;
+      onDelta(ev.clientX - lastX.current);
+      lastX.current = ev.clientX;
+    };
+    const onUp = () => {
+      dragging.current = false;
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup",   onUp);
+    };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup",   onUp);
+  };
+
+  return (
+    <div
+      onMouseDown={onMouseDown}
+      data-testid={testId}
+      className="w-1 shrink-0 cursor-col-resize bg-border hover:bg-primary/60 active:bg-primary transition-colors z-10"
+    />
+  );
+}
+
 // ── App ───────────────────────────────────────────────────────────────────────
 
 export default function App() {
@@ -113,6 +147,8 @@ export default function App() {
   const [settingsOpen, setSettingsOpen]   = useState(false);
   const [mergeStatus, setMergeStatus]     = useState<RepoStatus | null>(null);
   const [showResolver, setShowResolver]   = useState(false);
+  const [sidebarWidth, setSidebarWidth]   = useState(240);
+  const [detailWidth, setDetailWidth]     = useState(320);
 
   useEffect(() => {
     document.documentElement.classList.toggle("light", settings.theme === "light");
@@ -193,9 +229,15 @@ export default function App() {
           <WelcomeScreen />
         ) : (
           <>
-            <Sidebar onOperationComplete={refreshMergeStatus} />
+            <div data-testid="sidebar-wrapper" style={{ width: sidebarWidth, flexShrink: 0 }} className="min-w-0 overflow-hidden">
+              <Sidebar onOperationComplete={refreshMergeStatus} />
+            </div>
+            <ResizeDivider testId="resize-divider-sidebar" onDelta={(dx) => setSidebarWidth(w => Math.max(160, Math.min(520, w + dx)))} />
             <CommitGraph />
-            <DetailPanel />
+            <ResizeDivider testId="resize-divider-detail" onDelta={(dx) => setDetailWidth(w => Math.max(200, Math.min(640, w - dx)))} />
+            <div data-testid="detail-wrapper" style={{ width: detailWidth, flexShrink: 0 }} className="min-w-0 overflow-hidden">
+              <DetailPanel />
+            </div>
           </>
         )}
       </div>
