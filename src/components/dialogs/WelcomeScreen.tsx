@@ -25,6 +25,7 @@ export function WelcomeScreen() {
         <div className="space-y-3">
           <button
             onClick={openRepo}
+            data-testid="open-repo-btn"
             className="w-full flex items-center gap-3 px-4 py-3 bg-card border border-border rounded-lg text-sm text-foreground hover:bg-accent transition-colors"
           >
             <Folder size={18} className="text-primary" />
@@ -47,6 +48,7 @@ export function WelcomeScreen() {
                     <button
                       key={path}
                       onClick={() => openRepoFromPath(path)}
+                      data-testid={`recent-repo-${name}`}
                       className="w-full flex items-start gap-2 px-3 py-2 rounded hover:bg-accent transition-colors text-left"
                     >
                       <Folder size={13} className="text-muted-foreground mt-0.5 shrink-0" />

@@ -472,11 +472,11 @@ export function ThreePaneEditor({
 
         {total > 1 && (
           <div className="flex items-center gap-1 shrink-0">
-            <button onClick={() => acceptAll("ours")}
+            <button onClick={() => acceptAll("ours")} data-testid="all-ours-btn"
               className="flex items-center gap-0.5 px-2 py-1 text-[10px] rounded border bg-green-900/30 border-green-700/30 text-green-300 hover:bg-green-900/50 transition-colors">
               <ChevronsRight size={10} /> All Local
             </button>
-            <button onClick={() => acceptAll("theirs")}
+            <button onClick={() => acceptAll("theirs")} data-testid="all-theirs-btn"
               className="flex items-center gap-0.5 px-2 py-1 text-[10px] rounded border bg-blue-900/30 border-blue-700/30 text-blue-300 hover:bg-blue-900/50 transition-colors">
               <ChevronsLeft size={10} /> All Remote
             </button>
@@ -484,20 +484,20 @@ export function ThreePaneEditor({
         )}
 
         <div className="flex items-center gap-0.5 shrink-0">
-          <button onClick={() => goToConflict(activeConflict - 1)} disabled={activeConflict === 0}
+          <button onClick={() => goToConflict(activeConflict - 1)} disabled={activeConflict === 0} data-testid="prev-conflict-btn"
             className="p-1 rounded text-muted-foreground hover:text-foreground disabled:opacity-30 hover:bg-accent/30 transition-colors">
             <ChevronUp size={12} />
           </button>
-          <span className="text-[10px] tabular-nums text-muted-foreground px-1 min-w-[72px] text-center">
+          <span data-testid="conflict-progress" className="text-[10px] tabular-nums text-muted-foreground px-1 min-w-[72px] text-center">
             {total - unresolvedTotal}/{total} resolved
           </span>
-          <button onClick={() => goToConflict(activeConflict + 1)} disabled={activeConflict >= total - 1}
+          <button onClick={() => goToConflict(activeConflict + 1)} disabled={activeConflict >= total - 1} data-testid="next-conflict-btn"
             className="p-1 rounded text-muted-foreground hover:text-foreground disabled:opacity-30 hover:bg-accent/30 transition-colors">
             <ChevronDown size={12} />
           </button>
         </div>
 
-        <button onClick={stage} disabled={!allDone || staging}
+        <button onClick={stage} disabled={!allDone || staging} data-testid="stage-btn"
           className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-primary text-primary-foreground rounded hover:bg-primary/90 transition-colors disabled:opacity-40 disabled:cursor-not-allowed shrink-0">
           {staging && <Loader2 size={11} className="animate-spin" />}
           {staging ? "Staging…" : "Stage File"}

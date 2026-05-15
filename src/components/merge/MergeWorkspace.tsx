@@ -74,7 +74,7 @@ function FileList({
   onSelect: (f: string) => void;
 }) {
   return (
-    <div className="w-56 shrink-0 border-r border-border bg-card/50 flex flex-col overflow-hidden">
+    <div data-testid="file-list" className="w-56 shrink-0 border-r border-border bg-card/50 flex flex-col overflow-hidden">
       <div className="px-3 py-2 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground border-b border-border">
         Conflicted Files ({files.length})
       </div>
@@ -86,6 +86,7 @@ function FileList({
             <button
               key={f}
               onClick={() => onSelect(f)}
+              data-testid={`conflict-file-${f.split("/").pop()}`}
               className={cn(
                 "w-full text-left px-3 py-2 text-[11px] flex items-center gap-2 border-b border-border/30 hover:bg-accent/20 transition-colors",
                 isCurrent && "bg-accent/30",
@@ -136,7 +137,7 @@ function Banner({
   const completeLabel = isRebase ? "Continue Rebase" : needsCommit ? "Commit Merge" : "Done";
 
   return (
-    <div className="flex items-center gap-3 px-4 py-2.5 border-b border-yellow-500/20 bg-yellow-950/12 shrink-0">
+    <div data-testid="merge-banner" className="flex items-center gap-3 px-4 py-2.5 border-b border-yellow-500/20 bg-yellow-950/12 shrink-0">
       <GitMerge size={14} className="text-yellow-400 shrink-0" />
       <div className="flex-1 min-w-0">
         <span className="text-sm font-medium text-yellow-300">{op}</span>
@@ -153,11 +154,11 @@ function Banner({
         </span>
       </div>
       <div className="flex items-center gap-2 shrink-0">
-        <button onClick={onAbort}
+        <button onClick={onAbort} data-testid="abort-btn"
           className="px-3 py-1 text-xs border border-border/40 rounded hover:bg-accent/20 text-muted-foreground hover:text-foreground transition-colors">
           {needsCommit ? "Abort Merge" : isRebase ? "Abort Rebase" : "Abort"}
         </button>
-        <button onClick={onComplete} disabled={!allDone || completing}
+        <button onClick={onComplete} disabled={!allDone || completing} data-testid="complete-btn"
           className="flex items-center gap-1.5 px-3 py-1 text-xs bg-green-700 text-white rounded hover:bg-green-600 transition-colors disabled:opacity-40 disabled:cursor-not-allowed">
           {completing && <Loader2 size={10} className="animate-spin" />}
           {completeLabel}

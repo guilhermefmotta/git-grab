@@ -7,6 +7,8 @@ import { CommitGraph } from "@/components/graph/CommitGraph";
 import { DetailPanel } from "@/components/layout/DetailPanel";
 import { WelcomeScreen } from "@/components/dialogs/WelcomeScreen";
 import { SettingsDialog } from "@/components/dialogs/SettingsDialog";
+import { MergeWorkspace } from "@/components/merge/MergeWorkspace";
+import { useStatus } from "@/hooks/useStatus";
 import { git } from "@/lib/tauri";
 import { toast } from "sonner";
 import type { RepoStatus } from "@/lib/mergeTypes";
@@ -54,7 +56,7 @@ function MergeReadyBanner({
   const label = status.operation === "Rebasing" ? "Continue Rebase" : "Commit Merge";
 
   return (
-    <div className="flex items-center gap-3 px-4 py-2 border-b border-green-500/20 bg-green-950/10 shrink-0">
+    <div data-testid="merge-ready-banner" className="flex items-center gap-3 px-4 py-2 border-b border-green-500/20 bg-green-950/10 shrink-0">
       <GitMerge size={13} className="text-green-400 shrink-0" />
       <span className="text-xs text-green-300 flex-1">
         All conflicts resolved
@@ -79,11 +81,15 @@ function MergeReadyBanner({
   );
 }
 
-// Conflict banner (conflicts present — opens resolver in a new window)
-function ConflictBanner({ repoPath, status }: { repoPath: string; status: RepoStatus }) {
-  const open = () => git.openMergeWindow(repoPath).catch(() => {});
+// Conflict banner (conflicts present — opens inline resolver)
+function ConflictBanner({
+  status, onResolve,
+}: {
+  status: RepoStatus;
+  onResolve: () => void;
+}) {
   return (
-    <div className="flex items-center gap-3 px-4 py-2 border-b border-yellow-500/20 bg-yellow-950/10 shrink-0">
+    <div data-testid="conflict-banner" className="flex items-center gap-3 px-4 py-2 border-b border-yellow-500/20 bg-yellow-950/10 shrink-0">
       <AlertTriangle size={13} className="text-yellow-400 shrink-0" />
       <span className="text-xs text-yellow-300 flex-1">
         {status.conflictedFiles.length} file{status.conflictedFiles.length !== 1 ? "s have" : " has"} conflicts
@@ -91,7 +97,7 @@ function ConflictBanner({ repoPath, status }: { repoPath: string; status: RepoSt
           <span className="text-yellow-400/50 font-mono ml-2">{status.operationLabel}</span>
         )}
       </span>
-      <button onClick={open}
+      <button onClick={onResolve} data-testid="resolve-conflicts-btn"
         className="px-3 py-1 text-xs bg-yellow-700 text-white rounded hover:bg-yellow-600 transition-colors">
         Resolve Conflicts
       </button>
@@ -103,8 +109,10 @@ function ConflictBanner({ repoPath, status }: { repoPath: string; status: RepoSt
 
 export default function App() {
   const { activeRepo, settings, setSelectedCommitHash, status: fileStatus } = useAppStore();
-  const [settingsOpen, setSettingsOpen] = useState(false);
-  const [mergeStatus, setMergeStatus]   = useState<RepoStatus | null>(null);
+  const { refresh: refreshFileStatus } = useStatus();
+  const [settingsOpen, setSettingsOpen]   = useState(false);
+  const [mergeStatus, setMergeStatus]     = useState<RepoStatus | null>(null);
+  const [showResolver, setShowResolver]   = useState(false);
 
   useEffect(() => {
     document.documentElement.classList.toggle("light", settings.theme === "light");
@@ -122,8 +130,8 @@ export default function App() {
     }
   }, [activeRepo]);
 
-  // Refresh on repo change and whenever file status changes (catches post-merge conflicts)
-  useEffect(() => { refreshMergeStatus(); }, [activeRepo?.path]);
+  // Close resolver when repo changes
+  useEffect(() => { setShowResolver(false); refreshMergeStatus(); }, [activeRepo?.path]);
   useEffect(() => { if (activeRepo) refreshMergeStatus(); }, [fileStatus]);
 
   useEffect(() => {
@@ -158,6 +166,12 @@ export default function App() {
   const hasConflicts = fileStatus.some(f => f.status === "conflicted");
   const mergeReady   = mergeStatus !== null && !hasConflicts;
 
+  const handleResolverDone = async () => {
+    setShowResolver(false);
+    setMergeStatus(null); // clear immediately to avoid stale banner flash
+    await Promise.all([refreshMergeStatus(), refreshFileStatus()]);
+  };
+
   return (
     <div className="h-screen flex flex-col overflow-hidden bg-background text-foreground">
       <TopToolbar onOpenSettings={() => setSettingsOpen(true)} />
@@ -171,7 +185,7 @@ export default function App() {
         />
       )}
       {hasConflicts && activeRepo && mergeStatus && (
-        <ConflictBanner repoPath={activeRepo.path} status={mergeStatus} />
+        <ConflictBanner status={mergeStatus} onResolve={() => setShowResolver(true)} />
       )}
 
       <div className="flex flex-1 min-h-0 overflow-hidden">
@@ -185,6 +199,17 @@ export default function App() {
           </>
         )}
       </div>
+
+      {/* Inline conflict resolver — full-screen overlay */}
+      {showResolver && activeRepo && mergeStatus && (
+        <div className="absolute inset-0 z-50 bg-background flex flex-col overflow-hidden">
+          <MergeWorkspace
+            repoPath={activeRepo.path}
+            status={mergeStatus}
+            onDone={handleResolverDone}
+          />
+        </div>
+      )}
 
       <SettingsDialog open={settingsOpen} onClose={() => setSettingsOpen(false)} />
       <Toaster position="bottom-right" theme={settings.theme} toastOptions={toastOpts} />

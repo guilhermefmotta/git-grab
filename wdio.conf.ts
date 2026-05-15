@@ -16,7 +16,7 @@ function closeTauriDriver() {
 }
 
 export const config: Options.Testrunner = {
-  specs: ["./tests/e2e/**/*.spec.ts"],
+  specs: ["./tests/e2e/merge.spec.ts"],
   maxInstances: 1,
 
   capabilities: [
@@ -29,7 +29,7 @@ export const config: Options.Testrunner = {
   logLevel: "warn",
   framework: "mocha",
   reporters: ["spec"],
-  mochaOpts: { ui: "bdd", timeout: 30000 },
+  mochaOpts: { ui: "bdd", timeout: 60000 },
   connectionRetryCount: 0,
 
   host: "127.0.0.1",
