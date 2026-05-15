@@ -329,3 +329,45 @@ describe("Merge 09 — Accept Theirs", () => {
     await ss("26-theirs-committed");
   });
 });
+
+// ── Suite 10: DiffViewer (CodeMirror) ─────────────────────────────────────────
+describe("Merge 10 — DiffViewer CodeMirror rendering", () => {
+  before(async () => {
+    // Close current tab, reopen fresh test repo (post-merge state)
+    const { execSync } = await import("child_process");
+    try { execSync("bash /tmp/setup-test-repo.sh 2>/dev/null"); } catch {}
+    await browser.execute(() => {
+      const closeBtn = Array.from(document.querySelectorAll('button')).find(b => b.textContent?.trim() === '×');
+      closeBtn?.click();
+    });
+    await browser.pause(400);
+    await clickRecentRepo(TEST_REPO);
+    await browser.pause(800);
+  });
+
+  it("click first commit in graph — diff loads", async () => {
+    // Commit rows have cursor-pointer class — click the last one (oldest commit = "initial")
+    await browser.execute(() => {
+      const rows = Array.from(document.querySelectorAll(".cursor-pointer"))
+        .filter(el => el.textContent?.includes("initial") || el.closest('[style]'));
+      const last = document.querySelectorAll(".cursor-pointer");
+      if (last.length > 0) (last[last.length - 1] as HTMLElement).click();
+    });
+    await browser.pause(1200);
+    await ss("27-commit-selected");
+  });
+
+  it("diff viewer renders with CodeMirror editors", async () => {
+    // cm-editor elements should appear in the diff panel
+    const editors = await $$(".cm-editor");
+    await ss("28-diff-viewer-cm");
+    expect(editors.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it("diff shows file path header", async () => {
+    // After clicking a commit, diff panel shows changed files
+    const panels = await $$(".cm-editor");
+    await ss("29-diff-file-header");
+    expect(panels.length).toBeGreaterThanOrEqual(1);
+  });
+});

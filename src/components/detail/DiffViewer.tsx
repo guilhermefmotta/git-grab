@@ -1,123 +1,229 @@
-import { useMemo } from "react";
-import { cn } from "@/lib/utils";
+import { useEffect, useRef } from "react";
+import { EditorView, gutter, GutterMarker } from "@codemirror/view";
+import { EditorState, StateField, StateEffect, RangeSetBuilder } from "@codemirror/state";
+import { Decoration, DecorationSet } from "@codemirror/view";
+import { appTheme, appHighlight } from "@/components/merge/cm/theme";
+import { getLanguage } from "@/components/merge/cm/lang";
 import type { FileDiff, DiffLine } from "@/lib/types";
 
-type SideType = "context" | "add" | "delete" | "empty";
+// ── Row model ────────────────────────────────────────────────────────────────
 
-type Side = {
-  lineNo: number | null;
+type RowSide = {
   content: string;
-  type: SideType;
+  lineNo: number | null;
+  type: "context" | "add" | "delete" | "empty";
 };
 
-type Row = { left: Side; right: Side };
+type Row = { left: RowSide; right: RowSide };
 
 function buildRows(lines: DiffLine[]): Row[] {
   const rows: Row[] = [];
   let i = 0;
-
   while (i < lines.length) {
     const line = lines[i];
-
-    if (line.line_type === "header") {
-      i++;
-      continue;
-    }
-
+    if (line.line_type === "header") { i++; continue; }
     if (line.line_type === "context") {
       rows.push({
-        left: { lineNo: line.old_lineno ?? null, content: line.content, type: "context" },
-        right: { lineNo: line.new_lineno ?? null, content: line.content, type: "context" },
+        left:  { content: line.content, lineNo: line.old_lineno, type: "context" },
+        right: { content: line.content, lineNo: line.new_lineno, type: "context" },
       });
       i++;
       continue;
     }
-
-    // Collect consecutive deletes then adds
     const dels: DiffLine[] = [];
     const adds: DiffLine[] = [];
-
     while (i < lines.length && lines[i].line_type === "delete") dels.push(lines[i++]);
-    while (i < lines.length && lines[i].line_type === "add") adds.push(lines[i++]);
-
+    while (i < lines.length && lines[i].line_type === "add")    adds.push(lines[i++]);
     const maxLen = Math.max(dels.length, adds.length);
     for (let j = 0; j < maxLen; j++) {
       rows.push({
-        left: dels[j]
-          ? { lineNo: dels[j].old_lineno ?? null, content: dels[j].content, type: "delete" }
-          : { lineNo: null, content: "", type: "empty" },
+        left:  dels[j]
+          ? { content: dels[j].content, lineNo: dels[j].old_lineno, type: "delete" }
+          : { content: "",              lineNo: null,                type: "empty" },
         right: adds[j]
-          ? { lineNo: adds[j].new_lineno ?? null, content: adds[j].content, type: "add" }
-          : { lineNo: null, content: "", type: "empty" },
+          ? { content: adds[j].content, lineNo: adds[j].new_lineno, type: "add" }
+          : { content: "",              lineNo: null,                type: "empty" },
       });
     }
   }
-
   return rows;
 }
 
-function Gutter({ n }: { n: number | null }) {
-  return (
-    <span className="w-10 shrink-0 text-right pr-2 text-muted-foreground/50 select-none text-[10px] tabular-nums leading-5">
-      {n ?? ""}
-    </span>
-  );
+// ── CodeMirror line-number gutter ────────────────────────────────────────────
+
+class LineNoMarker extends GutterMarker {
+  constructor(private n: number | null) { super(); }
+  toDOM() {
+    const el = document.createElement("span");
+    el.textContent = this.n !== null ? String(this.n) : "";
+    return el;
+  }
+  eq(other: GutterMarker) {
+    return other instanceof LineNoMarker && other.n === this.n;
+  }
 }
 
-function Sign({ type }: { type: SideType }) {
-  return (
-    <span
-      className={cn(
-        "w-4 shrink-0 text-center select-none leading-5",
-        type === "delete" && "text-red-400",
-        type === "add" && "text-green-400",
-      )}
-    >
-      {type === "delete" ? "−" : type === "add" ? "+" : " "}
-    </span>
-  );
+function lineNumGutter(lineNos: (number | null)[]) {
+  return gutter({
+    class: "cm-diff-gutter",
+    lineMarker(view, line) {
+      const idx = view.state.doc.lineAt(line.from).number - 1;
+      return idx < lineNos.length ? new LineNoMarker(lineNos[idx]) : null;
+    },
+    initialSpacer: () => new LineNoMarker(999),
+  });
 }
 
-function SideCell({ side }: { side: Side }) {
+// ── Static decoration StateField ──────────────────────────────────────────────
+
+const setDecos = StateEffect.define<DecorationSet>();
+
+const staticDecoField = StateField.define<DecorationSet>({
+  create: () => Decoration.none,
+  update: (val, tr) => {
+    for (const e of tr.effects) if (e.is(setDecos)) return e.value;
+    return val;
+  },
+  provide: f => EditorView.decorations.from(f),
+});
+
+// ── Diff theme extension ───────────────────────────────────────────────────────
+
+const diffTheme = EditorView.theme({
+  ".cm-diff-gutter .cm-gutterElement": {
+    minWidth: "40px",
+    textAlign: "right",
+    padding: "0 4px",
+    color: "hsl(220 10% 45%)",
+    fontSize: "10px",
+    lineHeight: "20px",
+    userSelect: "none",
+  },
+  ".cm-diff-gutter": {
+    borderRight: "1px solid hsl(217 32% 17%)",
+    background: "hsl(222 47% 10%)",
+  },
+  ".cm-diff-delete": { background: "rgba(239,68,68,.15)", borderLeft: "2px solid rgba(239,68,68,.4)" },
+  ".cm-diff-add":    { background: "rgba(34,197,94,.13)", borderLeft: "2px solid rgba(34,197,94,.35)" },
+  ".cm-diff-empty":  { background: "rgba(255,255,255,.02)" },
+  "&": { height: "auto" },
+  ".cm-scroller": { overflow: "visible !important" },
+  ".cm-content": { lineHeight: "20px" },
+  ".cm-line":    { padding: "0 6px", lineHeight: "20px" },
+  ".cm-gutters": { borderRight: "none" },
+});
+
+// ── Build side doc + decorations ──────────────────────────────────────────────
+
+function buildSide(rows: Row[], side: "left" | "right"): {
+  doc: string;
+  lineNos: (number | null)[];
+  decos: DecorationSet;
+} {
+  const lines: string[] = [];
+  const lineNos: (number | null)[] = [];
+  const builder = new RangeSetBuilder<Decoration>();
+
+  let pos = 0;
+  for (const row of rows) {
+    const s = side === "left" ? row.left : row.right;
+    const cls =
+      s.type === "delete" ? "cm-diff-delete" :
+      s.type === "add"    ? "cm-diff-add"    :
+      s.type === "empty"  ? "cm-diff-empty"  : null;
+    if (cls) builder.add(pos, pos, Decoration.line({ class: cls }));
+    lines.push(s.content);
+    lineNos.push(s.lineNo);
+    pos += s.content.length + 1; // +1 for \n
+  }
+
+  return { doc: lines.join("\n"), lineNos, decos: builder.finish() };
+}
+
+// ── HunkView ──────────────────────────────────────────────────────────────────
+
+interface HunkViewProps {
+  rows: Row[];
+  filePath: string;
+  header: string;
+}
+
+function HunkView({ rows, filePath, header }: HunkViewProps) {
+  const leftRef  = useRef<HTMLDivElement>(null);
+  const rightRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!leftRef.current || !rightRef.current) return;
+
+    const lang = getLanguage(filePath);
+    const extraExts = lang ? [lang] : [];
+
+    const leftData  = buildSide(rows, "left");
+    const rightData = buildSide(rows, "right");
+
+    const makeEditor = (
+      parent: HTMLElement,
+      doc: string,
+      lineNos: (number | null)[],
+      decos: DecorationSet,
+    ) => new EditorView({
+      state: EditorState.create({
+        doc,
+        extensions: [
+          appTheme,
+          diffTheme,
+          appHighlight,
+          EditorState.readOnly.of(true),
+          staticDecoField.init(() => decos),
+          lineNumGutter(lineNos),
+          ...extraExts,
+        ],
+      }),
+      parent,
+    });
+
+    const left  = makeEditor(leftRef.current,  leftData.doc,  leftData.lineNos,  leftData.decos);
+    const right = makeEditor(rightRef.current, rightData.doc, rightData.lineNos, rightData.decos);
+
+    // Scroll sync
+    let syncing = false;
+    const sync = (src: EditorView, dst: EditorView) => {
+      const top = src.scrollDOM.scrollTop;
+      if (!syncing && Math.abs(dst.scrollDOM.scrollTop - top) > 1) {
+        syncing = true;
+        dst.scrollDOM.scrollTop = top;
+        syncing = false;
+      }
+    };
+    const lh = () => sync(left, right);
+    const rh = () => sync(right, left);
+    left.scrollDOM.addEventListener("scroll", lh, { passive: true });
+    right.scrollDOM.addEventListener("scroll", rh, { passive: true });
+
+    return () => {
+      left.scrollDOM.removeEventListener("scroll", lh);
+      right.scrollDOM.removeEventListener("scroll", rh);
+      left.destroy();
+      right.destroy();
+    };
+  }, [rows, filePath]);
+
   return (
-    <div
-      className={cn(
-        "flex items-start flex-1 min-w-0 overflow-hidden",
-        side.type === "delete" && "bg-red-950/50",
-        side.type === "add" && "bg-green-950/50",
-        side.type === "empty" && "bg-muted/5",
-      )}
-    >
-      <Gutter n={side.lineNo} />
-      <Sign type={side.type} />
-      <span
-        className={cn(
-          "flex-1 whitespace-pre-wrap break-all min-w-0 pr-2 leading-5 text-[11px]",
-          side.type === "delete" && "text-red-200",
-          side.type === "add" && "text-green-100",
-          side.type === "context" && "text-foreground",
-          side.type === "empty" && "select-none",
-        )}
-      >
-        {side.content || " "}
-      </span>
+    <div>
+      <div className="px-3 py-0.5 bg-blue-950/30 border-y border-blue-900/30 text-blue-400/70 text-[10px] font-mono">
+        {header}
+      </div>
+      <div className="flex overflow-hidden">
+        <div ref={leftRef}  className="flex-1 min-w-0 overflow-hidden border-r border-border/30" />
+        <div ref={rightRef} className="flex-1 min-w-0 overflow-hidden" />
+      </div>
     </div>
   );
 }
 
-export function DiffViewer({ diff, loading }: { diff: FileDiff[]; loading?: boolean }) {
-  const processed = useMemo(
-    () =>
-      diff.map((file) => ({
-        path: file.path,
-        hunks: file.hunks.map((hunk) => ({
-          header: hunk.header,
-          rows: buildRows(hunk.lines),
-        })),
-      })),
-    [diff],
-  );
+// ── Public DiffViewer ─────────────────────────────────────────────────────────
 
+export function DiffViewer({ diff, loading }: { diff: FileDiff[]; loading?: boolean }) {
   if (loading) {
     return (
       <div className="flex items-center justify-center h-full">
@@ -135,33 +241,19 @@ export function DiffViewer({ diff, loading }: { diff: FileDiff[]; loading?: bool
   }
 
   return (
-    <div className="overflow-auto h-full font-mono">
-      {processed.map((file) => (
+    <div className="overflow-auto h-full font-mono text-[11px]">
+      {diff.map((file) => (
         <div key={file.path}>
-          {/* File header */}
-          <div className="sticky top-0 z-10 bg-secondary px-3 py-1 text-xs font-semibold text-foreground border-b border-border flex items-center gap-2">
+          <div className="sticky top-0 z-10 bg-secondary px-3 py-1 text-xs font-semibold text-foreground border-b border-border flex items-center">
             <span className="flex-1 truncate">{file.path}</span>
           </div>
-
           {file.hunks.map((hunk, hi) => (
-            <div key={hi}>
-              {/* Hunk header — spans full width */}
-              <div className="px-3 py-0.5 bg-blue-950/30 border-y border-blue-900/30 text-blue-400/80 text-[10px]">
-                {hunk.header}
-              </div>
-
-              {/* Side-by-side rows */}
-              {hunk.rows.map((row, ri) => (
-                <div key={ri} className="flex border-b border-border/10">
-                  <div className="flex flex-1 min-w-0 border-r border-border/30">
-                    <SideCell side={row.left} />
-                  </div>
-                  <div className="flex flex-1 min-w-0">
-                    <SideCell side={row.right} />
-                  </div>
-                </div>
-              ))}
-            </div>
+            <HunkView
+              key={hi}
+              rows={buildRows(hunk.lines)}
+              filePath={file.path}
+              header={hunk.header}
+            />
           ))}
         </div>
       ))}
