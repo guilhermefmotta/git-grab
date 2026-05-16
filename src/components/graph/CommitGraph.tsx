@@ -13,6 +13,7 @@ import { BranchDialog } from "@/components/dialogs/BranchDialog";
 import { TagDialog } from "@/components/dialogs/TagDialog";
 import { ResetDialog } from "@/components/dialogs/ResetDialog";
 import { ConfirmDialog } from "@/components/dialogs/ConfirmDialog";
+import { InteractiveRebaseDialog } from "@/components/dialogs/InteractiveRebaseDialog";
 import {
   ContextMenu,
   ContextMenuContent,
@@ -125,6 +126,7 @@ function CommitRow({
   onCherryPick,
   onRevert,
   onReset,
+  onInteractiveRebase,
 }: {
   commit: CommitInfo;
   selected: boolean;
@@ -137,6 +139,7 @@ function CommitRow({
   onCherryPick: (commit: CommitInfo) => void;
   onRevert: (commit: CommitInfo) => void;
   onReset: (commit: CommitInfo) => void;
+  onInteractiveRebase: (commit: CommitInfo) => void;
 }) {
   const age = formatDistanceToNow(new Date(commit.timestamp * 1000), { addSuffix: true });
 
@@ -213,6 +216,9 @@ function CommitRow({
         <ContextMenuItem onClick={() => onReset(commit)}>
           Reset to here…
         </ContextMenuItem>
+        <ContextMenuItem data-testid="ctx-interactive-rebase" onClick={() => onInteractiveRebase(commit)}>
+          Interactive Rebase from here…
+        </ContextMenuItem>
         <ContextMenuSeparator />
         <ContextMenuItem onClick={() => onCopyHash(commit.hash)}>
           Copy full hash
@@ -232,6 +238,8 @@ export function CommitGraph() {
   const { refresh: refreshStatus } = useStatus();
 
   const [searchQuery, setSearchQuery] = useState("");
+  const [serverResults, setServerResults] = useState<CommitInfo[] | null>(null);
+  const [serverSearching, setServerSearching] = useState(false);
 
   const [branchDialog, setBranchDialog] = useState<{
     open: boolean; fromHash?: string; fromLabel?: string;
@@ -247,6 +255,7 @@ export function CommitGraph() {
 
   const [revertConfirm, setRevertConfirm] = useState<CommitInfo | null>(null);
   const [cherryPickConfirm, setCherryPickConfirm] = useState<CommitInfo | null>(null);
+  const [rebaseBase, setRebaseBase] = useState<CommitInfo | null>(null);
 
   const filteredCommits = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
@@ -308,6 +317,10 @@ export function CommitGraph() {
 
   const handleReset = useCallback((commit: CommitInfo) => {
     setResetDialog({ open: true, commit });
+  }, []);
+
+  const handleInteractiveRebase = useCallback((commit: CommitInfo) => {
+    setRebaseBase(commit);
   }, []);
 
   const handleDoubleClick = useCallback(
@@ -394,20 +407,35 @@ export function CommitGraph() {
           type="text"
           placeholder="Search commits…"
           value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
+          onChange={(e) => { setSearchQuery(e.target.value); setServerResults(null); }}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && searchQuery.trim() && activeRepo) {
+              setServerSearching(true);
+              git.searchCommits(activeRepo.path, searchQuery.trim())
+                .then(setServerResults)
+                .catch(() => {})
+                .finally(() => setServerSearching(false));
+            }
+          }}
           className="flex-1 bg-transparent text-xs text-foreground placeholder:text-muted-foreground outline-none"
         />
         {searchQuery && (
           <button
-            onClick={() => setSearchQuery("")}
+            data-testid="search-clear-btn"
+            onClick={() => { setSearchQuery(""); setServerResults(null); }}
             className="text-muted-foreground hover:text-foreground transition-colors"
           >
             <X size={12} />
           </button>
         )}
-        {searchQuery && (
+        {searchQuery && !serverResults && (
           <span className="text-[10px] text-muted-foreground shrink-0">
             {filteredCommits.length} of {commits.length}
+          </span>
+        )}
+        {serverResults && (
+          <span className="text-[10px] text-primary shrink-0">
+            {serverResults.length} found (all)
           </span>
         )}
       </div>
@@ -419,15 +447,33 @@ export function CommitGraph() {
         <span className="w-20 text-right">Date</span>
       </div>
 
-      {filteredCommits.length === 0 && searchQuery ? (
+      {filteredCommits.length === 0 && searchQuery && !serverResults && !serverSearching ? (
+        <div className="flex-1 flex flex-col items-center justify-center gap-3">
+          <p className="text-xs text-muted-foreground">No loaded commits match "{searchQuery}"</p>
+          <button
+            data-testid="search-all-commits-btn"
+            onClick={() => {
+              if (!activeRepo) return;
+              setServerSearching(true);
+              git.searchCommits(activeRepo.path, searchQuery.trim())
+                .then(setServerResults)
+                .catch(() => {})
+                .finally(() => setServerSearching(false));
+            }}
+            className="px-3 py-1.5 text-xs bg-primary text-primary-foreground rounded hover:bg-primary/90 transition-colors"
+          >
+            Search all commits
+          </button>
+        </div>
+      ) : serverSearching ? (
         <div className="flex-1 flex items-center justify-center">
-          <p className="text-xs text-muted-foreground">No commits match "{searchQuery}"</p>
+          <p className="text-xs text-muted-foreground">Searching…</p>
         </div>
       ) : (
         <Virtuoso
           style={{ flex: 1 }}
-          data={filteredCommits}
-          endReached={searchQuery ? undefined : loadMore}
+          data={serverResults ?? filteredCommits}
+          endReached={searchQuery || serverResults ? undefined : loadMore}
           itemContent={(_, commit) => (
             <CommitRow
               key={commit.hash}
@@ -442,6 +488,7 @@ export function CommitGraph() {
               onCherryPick={handleCherryPick}
               onRevert={handleRevert}
               onReset={handleReset}
+              onInteractiveRebase={handleInteractiveRebase}
             />
           )}
           components={{
@@ -519,6 +566,14 @@ export function CommitGraph() {
           }
         }}
         onCancel={() => setRevertConfirm(null)}
+      />
+
+      <InteractiveRebaseDialog
+        open={rebaseBase !== null}
+        baseCommit={rebaseBase}
+        repoPath={activeRepo?.path ?? ""}
+        onClose={() => setRebaseBase(null)}
+        onDone={() => { setRebaseBase(null); fullRefresh(); }}
       />
     </div>
   );

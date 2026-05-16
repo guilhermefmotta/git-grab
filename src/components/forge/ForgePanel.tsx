@@ -465,6 +465,7 @@ export function ForgePanel() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [needsToken, setNeedsToken] = useState(false);
+  const [prFilter, setPrFilter] = useState("");
   const [branchFilter, setBranchFilter] = useState("");
 
   const detect = useCallback(async () => {
@@ -501,6 +502,17 @@ export function ForgePanel() {
     if (tab === "prs") loadPrs();
     else loadPipelines();
   }, [tab, forge, needsToken]);
+
+  const filteredPrs = useMemo(() => {
+    const q = prFilter.toLowerCase().trim();
+    if (!q) return prs;
+    return prs.filter((pr) =>
+      pr.source_branch.toLowerCase().includes(q) ||
+      pr.target_branch.toLowerCase().includes(q) ||
+      pr.title.toLowerCase().includes(q) ||
+      pr.author.toLowerCase().includes(q)
+    );
+  }, [prs, prFilter]);
 
   const filteredGroups = useMemo(() => {
     const q = branchFilter.toLowerCase().trim();
@@ -579,19 +591,35 @@ export function ForgePanel() {
         ))}
       </div>
 
-      {/* Branch filter (pipelines tab only) */}
-      {tab === "pipelines" && (
+      {/* Filter bar */}
+      {(tab === "prs" || tab === "pipelines") && (
         <div className="px-3 py-1.5 border-b border-border shrink-0">
           <div className="flex items-center gap-1.5 bg-background border border-border rounded px-2 py-1">
             <Search size={10} className="text-muted-foreground shrink-0" />
-            <input
-              value={branchFilter}
-              onChange={(e) => setBranchFilter(e.target.value)}
-              placeholder="Filter by branch…"
-              className="flex-1 bg-transparent text-xs text-foreground placeholder:text-muted-foreground outline-none"
-            />
-            {branchFilter && (
-              <button onClick={() => setBranchFilter("")} className="text-muted-foreground hover:text-foreground text-xs leading-none">×</button>
+            {tab === "prs" ? (
+              <>
+                <input
+                  value={prFilter}
+                  onChange={(e) => setPrFilter(e.target.value)}
+                  placeholder="Filter by branch, title, author…"
+                  className="flex-1 bg-transparent text-xs text-foreground placeholder:text-muted-foreground outline-none"
+                />
+                {prFilter && (
+                  <button onClick={() => setPrFilter("")} className="text-muted-foreground hover:text-foreground text-xs leading-none">×</button>
+                )}
+              </>
+            ) : (
+              <>
+                <input
+                  value={branchFilter}
+                  onChange={(e) => setBranchFilter(e.target.value)}
+                  placeholder="Filter by branch…"
+                  className="flex-1 bg-transparent text-xs text-foreground placeholder:text-muted-foreground outline-none"
+                />
+                {branchFilter && (
+                  <button onClick={() => setBranchFilter("")} className="text-muted-foreground hover:text-foreground text-xs leading-none">×</button>
+                )}
+              </>
             )}
           </div>
         </div>
@@ -610,7 +638,9 @@ export function ForgePanel() {
         {!loading && !error && tab === "prs" && (
           prs.length === 0
             ? <p className="p-3 text-xs text-muted-foreground">No open {prLabel.toLowerCase()}</p>
-            : prs.map((pr) => <PrRow key={pr.number} pr={pr} repoPath={activeRepo.path} />)
+            : filteredPrs.length === 0
+              ? <p className="p-3 text-xs text-muted-foreground">No {prLabel.toLowerCase()} match "{prFilter}"</p>
+              : filteredPrs.map((pr) => <PrRow key={pr.number} pr={pr} repoPath={activeRepo.path} />)
         )}
         {!loading && !error && tab === "pipelines" && (
           pipelines.length === 0

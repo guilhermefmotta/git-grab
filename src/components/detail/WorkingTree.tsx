@@ -32,6 +32,7 @@ function FileRow({
   onOpenEditor,
   onShowInFolder,
   onIgnore,
+  onFileHistory,
   testId,
 }: {
   file: FileStatus;
@@ -48,6 +49,7 @@ function FileRow({
   onOpenEditor?: () => void;
   onShowInFolder?: () => void;
   onIgnore?: () => void;
+  onFileHistory?: () => void;
   testId?: string;
 }) {
   return (
@@ -95,6 +97,9 @@ function FileRow({
         >
           Copy path
         </ContextMenuItem>
+        {onFileHistory && (
+          <ContextMenuItem onClick={onFileHistory}>File History</ContextMenuItem>
+        )}
         {onIgnore && (
           <>
             <ContextMenuSeparator />
@@ -172,10 +177,12 @@ export function WorkingTree() {
   const [commitMsg, setCommitMsg] = useState("");
   const [committing, setCommitting] = useState(false);
   const [confirmDiscard, setConfirmDiscard] = useState<string | null>(null);
+  const [selectedFileIsStaged, setSelectedFileIsStaged] = useState<boolean | null>(null);
 
   const selectFile = async (path: string, isStaged: boolean) => {
     if (!activeRepo) return;
     setSelectedFilePath(path);
+    setSelectedFileIsStaged(isStaged);
     setLoadingDiff(true);
     try {
       const result = await git.getDiff(activeRepo.path, { filePath: path, staged: isStaged });
@@ -250,6 +257,38 @@ export function WorkingTree() {
     }
   };
 
+  const handleStageHunk = async (filePath: string, patch: string) => {
+    if (!activeRepo) return;
+    try {
+      await git.stageHunk(activeRepo.path, patch);
+      await selectFile(filePath, false);
+      refresh();
+    } catch (e) {
+      toast.error(String(e));
+    }
+  };
+
+  const handleUnstageHunk = async (filePath: string, patch: string) => {
+    if (!activeRepo) return;
+    try {
+      await git.unstageHunk(activeRepo.path, patch);
+      await selectFile(filePath, true);
+      refresh();
+    } catch (e) {
+      toast.error(String(e));
+    }
+  };
+
+  const handleFileHistory = (filePath: string) => {
+    if (!activeRepo) return;
+    const key = filePath.replace(/[^a-zA-Z0-9_\-]/g, "_");
+    localStorage.setItem(`git_rust_filehistory_${key}`, JSON.stringify({
+      repoPath: activeRepo.path,
+      filePath,
+    }));
+    git.openFileHistoryWindow(key, `History — ${filePath}`).catch(() => {});
+  };
+
   const handleIgnoreFile = async (filePath: string) => {
     if (!activeRepo) return;
     try {
@@ -308,6 +347,7 @@ export function WorkingTree() {
                 onDoubleClick={() => handleOpenDiff(f.path, false, true)}
                 onOpenEditor={() => handleOpenDiff(f.path, false, true)}
                 onShowInFolder={() => handleShowInFolder(f.path)}
+                onFileHistory={() => handleFileHistory(f.path)}
                 testId={`worktree-file-${f.path.replace(/\//g, "-")}`}
               />
             ))}
@@ -336,6 +376,7 @@ export function WorkingTree() {
             onUnstage={() => unstageFile(f.path)}
             onOpenEditor={() => handleOpenDiff(f.path, true)}
             onShowInFolder={() => handleShowInFolder(f.path)}
+            onFileHistory={() => handleFileHistory(f.path)}
             testId={`worktree-file-${f.path.replace(/\//g, "-")}`}
           />
         ))}
@@ -363,6 +404,7 @@ export function WorkingTree() {
             onDiscard={() => setConfirmDiscard(f.path)}
             onOpenEditor={() => handleOpenDiff(f.path, false)}
             onShowInFolder={() => handleShowInFolder(f.path)}
+            onFileHistory={() => handleFileHistory(f.path)}
             testId={`worktree-file-${f.path.replace(/\//g, "-")}`}
           />
         ))}
@@ -386,6 +428,7 @@ export function WorkingTree() {
                 onOpenEditor={() => handleOpenDiff(f.path, false)}
                 onShowInFolder={() => handleShowInFolder(f.path)}
                 onIgnore={() => handleIgnoreFile(f.path)}
+                onFileHistory={() => handleFileHistory(f.path)}
                 testId={`worktree-file-${f.path.replace(/\//g, "-")}`}
               />
             ))}
@@ -395,7 +438,12 @@ export function WorkingTree() {
 
       {/* Diff preview */}
       <div className="h-52 border-t border-border overflow-hidden">
-        <DiffViewer diff={diff} loading={loadingDiff} />
+        <DiffViewer
+          diff={diff}
+          loading={loadingDiff}
+          onStageHunk={selectedFileIsStaged === false ? handleStageHunk : undefined}
+          onUnstageHunk={selectedFileIsStaged === true ? handleUnstageHunk : undefined}
+        />
       </div>
 
       {/* Commit form */}

@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { EditorView, gutter, GutterMarker } from "@codemirror/view";
 import { EditorState, StateField, StateEffect, RangeSetBuilder } from "@codemirror/state";
 import { Decoration, DecorationSet } from "@codemirror/view";
@@ -140,15 +140,40 @@ function buildSide(rows: Row[], side: "left" | "right"): {
   return { doc: lines.join("\n"), lineNos, decos: builder.finish() };
 }
 
+// ── Patch builder ─────────────────────────────────────────────────────────────
+
+function buildHunkPatch(filePath: string, header: string, lines: DiffLine[]): string {
+  const body = lines
+    .filter((l) => l.line_type !== "header")
+    .map((l) => {
+      if (l.line_type === "add")    return `+${l.content}`;
+      if (l.line_type === "delete") return `-${l.content}`;
+      return ` ${l.content}`;
+    })
+    .join("\n");
+  return [
+    `diff --git a/${filePath} b/${filePath}`,
+    `--- a/${filePath}`,
+    `+++ b/${filePath}`,
+    header,
+    body,
+    "",
+  ].join("\n");
+}
+
 // ── HunkView ──────────────────────────────────────────────────────────────────
 
 interface HunkViewProps {
   rows: Row[];
   filePath: string;
   header: string;
+  lines?: DiffLine[];
+  onStageHunk?: (patch: string) => Promise<void>;
+  onUnstageHunk?: (patch: string) => Promise<void>;
 }
 
-function HunkView({ rows, filePath, header }: HunkViewProps) {
+function HunkView({ rows, filePath, header, lines, onStageHunk, onUnstageHunk }: HunkViewProps) {
+  const [staging, setStaging] = useState(false);
   const leftRef  = useRef<HTMLDivElement>(null);
   const rightRef = useRef<HTMLDivElement>(null);
 
@@ -208,10 +233,42 @@ function HunkView({ rows, filePath, header }: HunkViewProps) {
     };
   }, [rows, filePath]);
 
+  const handleStage = async () => {
+    if (!lines || !onStageHunk) return;
+    setStaging(true);
+    try { await onStageHunk(buildHunkPatch(filePath, header, lines)); }
+    finally { setStaging(false); }
+  };
+
+  const handleUnstage = async () => {
+    if (!lines || !onUnstageHunk) return;
+    setStaging(true);
+    try { await onUnstageHunk(buildHunkPatch(filePath, header, lines)); }
+    finally { setStaging(false); }
+  };
+
   return (
     <div>
-      <div className="px-3 py-0.5 bg-blue-950/30 border-y border-blue-900/30 text-blue-400/70 text-[10px] font-mono">
-        {header}
+      <div className="flex items-center gap-2 px-3 py-0.5 bg-blue-950/30 border-y border-blue-900/30">
+        <span className="flex-1 text-blue-400/70 text-[10px] font-mono">{header}</span>
+        {onStageHunk && lines && (
+          <button
+            onClick={handleStage}
+            disabled={staging}
+            className="shrink-0 text-[10px] px-2 py-0.5 rounded bg-green-800/50 text-green-300 hover:bg-green-700/60 transition-colors disabled:opacity-40"
+          >
+            Stage Hunk
+          </button>
+        )}
+        {onUnstageHunk && lines && (
+          <button
+            onClick={handleUnstage}
+            disabled={staging}
+            className="shrink-0 text-[10px] px-2 py-0.5 rounded bg-yellow-800/50 text-yellow-300 hover:bg-yellow-700/60 transition-colors disabled:opacity-40"
+          >
+            Unstage Hunk
+          </button>
+        )}
       </div>
       <div className="flex overflow-hidden">
         <div ref={leftRef}  className="flex-1 min-w-0 overflow-hidden border-r border-border/30" />
@@ -223,7 +280,14 @@ function HunkView({ rows, filePath, header }: HunkViewProps) {
 
 // ── Public DiffViewer ─────────────────────────────────────────────────────────
 
-export function DiffViewer({ diff, loading }: { diff: FileDiff[]; loading?: boolean }) {
+interface DiffViewerProps {
+  diff: FileDiff[];
+  loading?: boolean;
+  onStageHunk?: (filePath: string, patch: string) => Promise<void>;
+  onUnstageHunk?: (filePath: string, patch: string) => Promise<void>;
+}
+
+export function DiffViewer({ diff, loading, onStageHunk, onUnstageHunk }: DiffViewerProps) {
   if (loading) {
     return (
       <div className="flex items-center justify-center h-full">
@@ -253,6 +317,9 @@ export function DiffViewer({ diff, loading }: { diff: FileDiff[]; loading?: bool
               rows={buildRows(hunk.lines)}
               filePath={file.path}
               header={hunk.header}
+              lines={hunk.lines}
+              onStageHunk={onStageHunk ? (patch) => onStageHunk(file.path, patch) : undefined}
+              onUnstageHunk={onUnstageHunk ? (patch) => onUnstageHunk(file.path, patch) : undefined}
             />
           ))}
         </div>

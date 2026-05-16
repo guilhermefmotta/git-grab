@@ -30,6 +30,10 @@ export const git = {
     invoke<void>("unstage_file", { repoPath, filePath }),
   stageAll: (repoPath: string) => invoke<void>("stage_all", { repoPath }),
   unstageAll: (repoPath: string) => invoke<void>("unstage_all", { repoPath }),
+  stageHunk: (repoPath: string, patch: string) =>
+    invoke<void>("stage_hunk", { repoPath, patch }),
+  unstageHunk: (repoPath: string, patch: string) =>
+    invoke<void>("unstage_hunk", { repoPath, patch }),
   discardChanges: (repoPath: string, filePath: string) =>
     invoke<void>("discard_changes", { repoPath, filePath }),
 
@@ -116,11 +120,37 @@ export const git = {
   deleteTag: (repoPath: string, name: string) =>
     invoke<void>("delete_tag", { repoPath, name }),
 
+  // Log
+  getFileHistory: (repoPath: string, filePath: string, limit?: number, offset?: number) =>
+    invoke<import("./types").CommitInfo[]>("get_file_history", { repoPath, filePath, limit, offset }),
+  getReflog: (repoPath: string, limit?: number) =>
+    invoke<import("./types").ReflogEntry[]>("get_reflog", { repoPath, limit }),
+  searchCommits: (repoPath: string, query: string) =>
+    invoke<import("./types").CommitInfo[]>("search_commits", { repoPath, query }),
+
+  // Submodules
+  getSubmodules: (repoPath: string) =>
+    invoke<import("./types").SubmoduleInfo[]>("get_submodules", { repoPath }),
+
+  // Interactive rebase
+  getRebaseCommits: (repoPath: string, baseHash: string) =>
+    invoke<import("./types").CommitInfo[]>("get_rebase_commits", { repoPath, baseHash }),
+  startInteractiveRebase: (repoPath: string, baseHash: string, steps: { action: string; hash: string; message: string }[]) =>
+    invoke<void>("start_interactive_rebase", { repoPath, baseHash, steps }),
+
+  // Blame
+  getBlame: (repoPath: string, filePath: string, commitHash?: string) =>
+    invoke<import("./types").BlameLine[]>("get_blame", { repoPath, filePath, commitHash }),
+
   // Windows
   openCommitWindow: (hash: string, title: string) =>
     invoke<void>("open_commit_window", { hash, title }),
   openFileDiffWindow: (key: string, title: string) =>
     invoke<void>("open_file_diff_window", { key, title }),
+  openFileHistoryWindow: (key: string, title: string) =>
+    invoke<void>("open_file_history_window", { key, title }),
+  openBlameWindow: (key: string, title: string) =>
+    invoke<void>("open_blame_window", { key, title }),
   openMergeWindow: (repoPath: string) =>
     invoke<void>("open_merge_window", { repoPath }),
 

@@ -1,6 +1,45 @@
 use crate::git::types::{FileStatus, FileStatusKind};
 use git2::{IndexAddOption, Repository, ResetType, Status};
 
+fn apply_patch(repo_path: &str, patch: &str, reverse: bool) -> Result<(), String> {
+    use std::io::Write;
+    use std::process::{Command, Stdio};
+
+    let mut args = vec!["apply", "--cached", "--whitespace=nowarn", "--unidiff-zero"];
+    if reverse {
+        args.push("--reverse");
+    }
+
+    let mut child = Command::new("git")
+        .args(&args)
+        .current_dir(repo_path)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|e| format!("git not found: {}", e))?;
+
+    if let Some(mut stdin) = child.stdin.take() {
+        stdin.write_all(patch.as_bytes()).map_err(|e| e.to_string())?;
+    }
+
+    let output = child.wait_with_output().map_err(|e| e.to_string())?;
+    if !output.status.success() {
+        return Err(String::from_utf8_lossy(&output.stderr).trim().to_string());
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn stage_hunk(repo_path: String, patch: String) -> Result<(), String> {
+    apply_patch(&repo_path, &patch, false)
+}
+
+#[tauri::command]
+pub async fn unstage_hunk(repo_path: String, patch: String) -> Result<(), String> {
+    apply_patch(&repo_path, &patch, true)
+}
+
 fn map_status(s: Status, path: &str) -> Option<FileStatus> {
     let staged = s.intersects(
         Status::INDEX_NEW

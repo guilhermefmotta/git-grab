@@ -4,6 +4,12 @@ import { GitCommit, User, Clock } from "lucide-react";
 import { git } from "@/lib/tauri";
 import { useAppStore } from "@/store/appStore";
 import { DiffViewer } from "./DiffViewer";
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuTrigger,
+} from "@/components/ui/context-menu";
 import type { CommitInfo } from "@/lib/types";
 
 function MetaRow({ icon: Icon, value }: { icon: React.ElementType; value: string }) {
@@ -85,28 +91,70 @@ export function CommitDetail({ commit }: { commit: CommitInfo }) {
           </p>
           <div className="max-h-28 overflow-y-auto">
             {diff.map((f) => (
-              <div
-                key={f.path}
-                data-testid={`commit-file-${f.path.replace(/\//g, "-")}`}
-                onClick={() => setSelectedFilePath(f.path === selectedFilePath ? null : f.path)}
-                onDoubleClick={() => {
-                if (!activeRepo) return;
-                const key = `commit_${commit.hash}_${f.path.replace(/[^a-zA-Z0-9_\-]/g, "_")}`;
-                localStorage.setItem(`git_rust_filediff_${key}`, JSON.stringify({
-                  repoPath: activeRepo.path,
-                  filePath: f.path,
-                  staged: false,
-                  commitHash: commit.hash,
-                  shortHash: commit.short_hash,
-                }));
-                git.openFileDiffWindow(key, `${commit.short_hash} — ${f.path}`).catch(() => {});
-              }}
-                className={`px-3 py-1 text-xs cursor-pointer transition-colors ${
-                  selectedFilePath === f.path ? "bg-primary/15" : "hover:bg-accent"
-                }`}
-              >
-                {f.path}
-              </div>
+              <ContextMenu key={f.path}>
+                <ContextMenuTrigger asChild>
+                  <div
+                    data-testid={`commit-file-${f.path.replace(/\//g, "-")}`}
+                    onClick={() => setSelectedFilePath(f.path === selectedFilePath ? null : f.path)}
+                    onDoubleClick={() => {
+                      if (!activeRepo) return;
+                      const key = `commit_${commit.hash}_${f.path.replace(/[^a-zA-Z0-9_\-]/g, "_")}`;
+                      localStorage.setItem(`git_rust_filediff_${key}`, JSON.stringify({
+                        repoPath: activeRepo.path,
+                        filePath: f.path,
+                        staged: false,
+                        commitHash: commit.hash,
+                        shortHash: commit.short_hash,
+                      }));
+                      git.openFileDiffWindow(key, `${commit.short_hash} — ${f.path}`).catch(() => {});
+                    }}
+                    className={`px-3 py-1 text-xs cursor-pointer transition-colors ${
+                      selectedFilePath === f.path ? "bg-primary/15" : "hover:bg-accent"
+                    }`}
+                  >
+                    {f.path}
+                  </div>
+                </ContextMenuTrigger>
+                <ContextMenuContent>
+                  <ContextMenuItem data-testid="ctx-file-history" onClick={() => {
+                    if (!activeRepo) return;
+                    const key = f.path.replace(/[^a-zA-Z0-9_\-]/g, "_");
+                    localStorage.setItem(`git_rust_filehistory_${key}`, JSON.stringify({
+                      repoPath: activeRepo.path,
+                      filePath: f.path,
+                    }));
+                    git.openFileHistoryWindow(key, `History — ${f.path}`).catch(() => {});
+                  }}>
+                    File History
+                  </ContextMenuItem>
+                  <ContextMenuItem data-testid="ctx-view-diff" onClick={() => {
+                    if (!activeRepo) return;
+                    const key = `commit_${commit.hash}_${f.path.replace(/[^a-zA-Z0-9_\-]/g, "_")}`;
+                    localStorage.setItem(`git_rust_filediff_${key}`, JSON.stringify({
+                      repoPath: activeRepo.path,
+                      filePath: f.path,
+                      staged: false,
+                      commitHash: commit.hash,
+                      shortHash: commit.short_hash,
+                    }));
+                    git.openFileDiffWindow(key, `${commit.short_hash} — ${f.path}`).catch(() => {});
+                  }}>
+                    View diff
+                  </ContextMenuItem>
+                  <ContextMenuItem data-testid="ctx-file-blame" onClick={() => {
+                    if (!activeRepo) return;
+                    const key = `blame_${commit.hash}_${f.path.replace(/[^a-zA-Z0-9_\-]/g, "_")}`;
+                    localStorage.setItem(`git_rust_blame_${key}`, JSON.stringify({
+                      repoPath: activeRepo.path,
+                      filePath: f.path,
+                      commitHash: commit.hash,
+                    }));
+                    git.openBlameWindow(key, `Blame — ${f.path}`).catch(() => {});
+                  }}>
+                    Blame
+                  </ContextMenuItem>
+                </ContextMenuContent>
+              </ContextMenu>
             ))}
           </div>
         </div>

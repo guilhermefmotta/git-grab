@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
-import { ChevronRight, ChevronDown, GitBranch, Tag, Archive, Globe } from "lucide-react";
+import { ChevronRight, ChevronDown, GitBranch, Tag, Archive, Globe, Package, History } from "lucide-react";
+import { formatDistanceToNow } from "date-fns";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { git } from "@/lib/tauri";
@@ -7,6 +8,7 @@ import { useAppStore } from "@/store/appStore";
 import { useBranches } from "@/hooks/useBranches";
 import { useCommits } from "@/hooks/useCommits";
 import { useStatus } from "@/hooks/useStatus";
+import { useRepo } from "@/hooks/useRepo";
 import { BranchDialog } from "@/components/dialogs/BranchDialog";
 import { ConfirmDialog } from "@/components/dialogs/ConfirmDialog";
 import { RollbackDialog } from "@/components/dialogs/RollbackDialog";
@@ -18,7 +20,7 @@ import {
   ContextMenuLabel,
   ContextMenuTrigger,
 } from "@/components/ui/context-menu";
-import type { BranchInfo, StashInfo, TagInfo } from "@/lib/types";
+import type { BranchInfo, StashInfo, TagInfo, ReflogEntry, SubmoduleInfo } from "@/lib/types";
 
 function SectionHeader({
   label, count, open, onToggle,
@@ -195,6 +197,38 @@ function StashItem({
   );
 }
 
+function ReflogItem({ entry, onClick }: { entry: ReflogEntry; onClick: () => void }) {
+  return (
+    <button
+      data-testid={`reflog-item-${entry.index}`}
+      onClick={onClick}
+      className="flex items-center gap-2 w-full px-4 py-1 text-xs cursor-pointer rounded mx-1 hover:bg-accent transition-colors"
+    >
+      <History size={10} className="shrink-0 text-muted-foreground" />
+      <span className="font-mono text-primary shrink-0">{entry.short_hash}</span>
+      <span className="flex-1 truncate text-foreground text-left">{entry.message}</span>
+      <span className="text-[10px] text-muted-foreground shrink-0">
+        {formatDistanceToNow(new Date(entry.timestamp * 1000), { addSuffix: true })}
+      </span>
+    </button>
+  );
+}
+
+function SubmoduleItem({ sub, onOpen }: { sub: SubmoduleInfo; onOpen: () => void }) {
+  return (
+    <button
+      onClick={onOpen}
+      className="flex items-center gap-2 w-full px-4 py-1 text-xs cursor-pointer rounded mx-1 hover:bg-accent transition-colors"
+    >
+      <Package size={11} className="shrink-0 text-muted-foreground" />
+      <span className="flex-1 truncate text-foreground text-left">{sub.name}</span>
+      {sub.head_hash && (
+        <span className="font-mono text-[10px] text-primary shrink-0">{sub.head_hash.slice(0, 7)}</span>
+      )}
+    </button>
+  );
+}
+
 function TagItem({
   tag,
   onDelete,
@@ -228,15 +262,18 @@ function TagItem({
 }
 
 export function Sidebar({ onOperationComplete }: { onOperationComplete?: () => void }) {
-  const { activeRepo, stashes, tags, setStashes, setTags, activeBranchFilter, setActiveBranchFilter } = useAppStore();
+  const { activeRepo, stashes, tags, setStashes, setTags, activeBranchFilter, setActiveBranchFilter, setSelectedCommitHash } = useAppStore();
   const { local, remote, checkout, smartCheckout, mergeBranch, rebaseBranch, createBranch, deleteBranch, refresh: refreshBranches } = useBranches();
   const { loadCommits } = useCommits();
   const { refresh: refreshStatus } = useStatus();
+  const { openRepoFromPath } = useRepo();
 
   useEffect(() => {
     if (!activeRepo) return;
     git.getStashes(activeRepo.path).then(setStashes).catch(() => {});
     git.getTags(activeRepo.path).then(setTags).catch(() => {});
+    git.getReflog(activeRepo.path).then(setReflog).catch(() => {});
+    git.getSubmodules(activeRepo.path).then(setSubmodules).catch(() => {});
   }, [activeRepo?.path]);
 
   const [filter, setFilter] = useState("");
@@ -245,6 +282,11 @@ export function Sidebar({ onOperationComplete }: { onOperationComplete?: () => v
   const [openRemote, setOpenRemote] = useState(true);
   const [openTags, setOpenTags] = useState(false);
   const [openStashes, setOpenStashes] = useState(false);
+  const [openReflog, setOpenReflog] = useState(false);
+  const [openSubmodules, setOpenSubmodules] = useState(false);
+
+  const [reflog, setReflog] = useState<ReflogEntry[]>([]);
+  const [submodules, setSubmodules] = useState<SubmoduleInfo[]>([]);
 
   const [rollbackOpen, setRollbackOpen] = useState(false);
 
@@ -598,6 +640,44 @@ export function Sidebar({ onOperationComplete }: { onOperationComplete?: () => v
               onDrop={handleDropStash}
             />
           ))}
+
+          {/* Submodules */}
+          {submodules.length > 0 && (
+            <>
+              <SectionHeader
+                label="Submodules"
+                count={submodules.length}
+                open={openSubmodules}
+                onToggle={() => setOpenSubmodules((v) => !v)}
+              />
+              {openSubmodules && submodules.map((s) => (
+                <SubmoduleItem
+                  key={s.path}
+                  sub={s}
+                  onOpen={() => openRepoFromPath(s.path)}
+                />
+              ))}
+            </>
+          )}
+
+          {/* Reflog */}
+          {reflog.length > 0 && (
+            <>
+              <SectionHeader
+                label="Reflog"
+                count={reflog.length}
+                open={openReflog}
+                onToggle={() => setOpenReflog((v) => !v)}
+              />
+              {openReflog && reflog.map((e) => (
+                <ReflogItem
+                  key={e.index}
+                  entry={e}
+                  onClick={() => setSelectedCommitHash(e.hash)}
+                />
+              ))}
+            </>
+          )}
         </div>
       </div>
 

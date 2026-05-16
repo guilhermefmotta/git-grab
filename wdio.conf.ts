@@ -16,7 +16,7 @@ function closeTauriDriver() {
 }
 
 export const config: Options.Testrunner = {
-  specs: ["./tests/e2e/features.spec.ts"],
+  specs: ["./tests/e2e/features.spec.ts", "./tests/e2e/git-features.spec.ts"],
   maxInstances: 1,
 
   capabilities: [

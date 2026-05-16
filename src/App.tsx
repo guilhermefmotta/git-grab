@@ -11,76 +11,8 @@ import { SettingsDialog } from "@/components/dialogs/SettingsDialog";
 import { MergeWorkspace } from "@/components/merge/MergeWorkspace";
 import { useStatus } from "@/hooks/useStatus";
 import { git } from "@/lib/tauri";
-import { toast } from "sonner";
 import type { RepoStatus } from "@/lib/mergeTypes";
-import { GitMerge, Loader2, AlertTriangle } from "lucide-react";
-
-// Merge-ready (0 conflicts, needs commit/continue)
-function MergeReadyBanner({
-  repoPath, status, onDone,
-}: {
-  repoPath: string;
-  status: RepoStatus;
-  onDone: () => void;
-}) {
-  const [loading, setLoading] = useState(false);
-
-  const commit = async () => {
-    setLoading(true);
-    try {
-      if (status.operation === "Merging") {
-        await git.completeMergeCommit(repoPath);
-        toast.success("Merge committed");
-      } else {
-        const next = await git.continueOperation(repoPath);
-        if (next.conflictedFiles.length > 0) {
-          toast.info(`${next.conflictedFiles.length} new conflict(s) — opening resolver`);
-        } else {
-          toast.success("Operation completed");
-        }
-      }
-      onDone();
-    } catch (e) { toast.error(String(e)); }
-    finally { setLoading(false); }
-  };
-
-  const abort = async () => {
-    setLoading(true);
-    try {
-      await git.abortOperation(repoPath);
-      toast.success("Aborted — files restored");
-      onDone();
-    } catch (e) { toast.error(String(e)); }
-    finally { setLoading(false); }
-  };
-
-  const label = status.operation === "Rebasing" ? "Continue Rebase" : "Commit Merge";
-
-  return (
-    <div data-testid="merge-ready-banner" className="flex items-center gap-3 px-4 py-2 border-b border-green-500/20 bg-green-950/10 shrink-0">
-      <GitMerge size={13} className="text-green-400 shrink-0" />
-      <span className="text-xs text-green-300 flex-1">
-        All conflicts resolved
-        {status.operationLabel && (
-          <span className="text-green-400/50 font-mono ml-2">{status.operationLabel}</span>
-        )}
-        {" — "}
-        <span className="text-muted-foreground">ready to {label.toLowerCase()}</span>
-      </span>
-      <div className="flex items-center gap-2 shrink-0">
-        <button onClick={abort} disabled={loading}
-          className="px-2.5 py-1 text-xs border border-border/40 rounded text-muted-foreground hover:text-foreground hover:bg-accent/20 transition-colors disabled:opacity-40">
-          Abort
-        </button>
-        <button onClick={commit} disabled={loading}
-          className="flex items-center gap-1.5 px-3 py-1 text-xs bg-green-700 text-white rounded hover:bg-green-600 transition-colors disabled:opacity-40">
-          {loading && <Loader2 size={10} className="animate-spin" />}
-          {label}
-        </button>
-      </div>
-    </div>
-  );
-}
+import { AlertTriangle } from "lucide-react";
 
 // Conflict banner (conflicts present — opens inline resolver)
 function ConflictBanner({
@@ -200,7 +132,6 @@ export default function App() {
 
   // Derive conflict state from fileStatus (same source as WorkingTree) — always accurate
   const hasConflicts = fileStatus.some(f => f.status === "conflicted");
-  const mergeReady   = mergeStatus !== null && !hasConflicts;
 
   const handleResolverDone = async () => {
     setShowResolver(false);
@@ -213,13 +144,6 @@ export default function App() {
       <TopToolbar onOpenSettings={() => setSettingsOpen(true)} />
 
       {/* Status banners — always visible, never hide the commit graph */}
-      {mergeReady && activeRepo && (
-        <MergeReadyBanner
-          repoPath={activeRepo.path}
-          status={mergeStatus!}
-          onDone={refreshMergeStatus}
-        />
-      )}
       {hasConflicts && activeRepo && mergeStatus && (
         <ConflictBanner status={mergeStatus} onResolve={() => setShowResolver(true)} />
       )}

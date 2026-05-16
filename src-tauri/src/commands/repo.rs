@@ -223,6 +223,64 @@ pub async fn open_merge_window(
 }
 
 #[tauri::command]
+pub async fn open_file_history_window(
+    app: tauri::AppHandle,
+    key: String,
+    title: String,
+) -> Result<(), String> {
+    let label = format!("filehistory-{}", &key[..key.len().min(40)]);
+
+    if let Some(win) = app.get_webview_window(&label) {
+        win.set_focus().ok();
+        return Ok(());
+    }
+
+    tauri::WebviewWindowBuilder::new(
+        &app,
+        &label,
+        tauri::WebviewUrl::App(
+            std::path::PathBuf::from(format!("index.html?view=filehistory&key={}", key)),
+        ),
+    )
+    .title(title)
+    .inner_size(1200.0, 800.0)
+    .center()
+    .build()
+    .map_err(|e| e.to_string())?;
+
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn open_blame_window(
+    app: tauri::AppHandle,
+    key: String,
+    title: String,
+) -> Result<(), String> {
+    let label = format!("blame-{}", &key[..key.len().min(40)]);
+
+    if let Some(win) = app.get_webview_window(&label) {
+        win.set_focus().ok();
+        return Ok(());
+    }
+
+    tauri::WebviewWindowBuilder::new(
+        &app,
+        &label,
+        tauri::WebviewUrl::App(
+            std::path::PathBuf::from(format!("index.html?view=blame&key={}", key)),
+        ),
+    )
+    .title(title)
+    .inner_size(1200.0, 800.0)
+    .center()
+    .build()
+    .map_err(|e| e.to_string())?;
+
+    Ok(())
+}
+
+#[tauri::command]
 pub async fn get_file_content(repo_path: String, file_path: String) -> Result<String, String> {
     let full = std::path::Path::new(&repo_path).join(&file_path);
     std::fs::read_to_string(&full).map_err(|e| e.to_string())

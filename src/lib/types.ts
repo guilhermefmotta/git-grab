@@ -89,3 +89,27 @@ export interface TagInfo {
   message: string | null;
   timestamp: number | null;
 }
+
+export interface ReflogEntry {
+  index: number;
+  hash: string;
+  short_hash: string;
+  message: string;
+  timestamp: number;
+}
+
+export interface SubmoduleInfo {
+  name: string;
+  path: string;
+  url: string;
+  head_hash: string | null;
+}
+
+export interface BlameLine {
+  line_no: number;
+  hash: string;
+  short_hash: string;
+  author: string;
+  timestamp: number;
+  content: string;
+}
