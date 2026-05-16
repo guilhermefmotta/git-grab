@@ -7,6 +7,16 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_shell::init())
         .invoke_handler(tauri::generate_handler![
+            commands::forge::open_forge_window,
+            commands::forge::detect_forge,
+            commands::forge::save_forge_token,
+            commands::forge::get_pull_requests,
+            commands::forge::get_pipelines,
+            commands::forge::get_pr_comments,
+            commands::forge::post_pr_comment,
+            commands::forge::trigger_pipeline,
+            commands::forge::get_pipeline_jobs,
+            commands::forge::retry_pipeline_job,
             commands::repo::open_repo,
             commands::repo::init_repo,
             commands::repo::clone_repo,
@@ -18,6 +28,7 @@ pub fn run() {
             commands::repo::open_commit_window,
             commands::repo::open_file_diff_window,
             commands::repo::open_merge_window,
+            commands::repo::open_path,
             commands::status::get_status,
             commands::status::stage_file,
             commands::status::unstage_file,

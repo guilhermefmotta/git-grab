@@ -16,7 +16,7 @@ import {
 import { EditorView } from "@codemirror/view";
 import {
   ChevronsLeft, ChevronsRight, ChevronDown, ChevronUp,
-  CheckCircle, SkipForward, Loader2,
+  CheckCircle, SkipForward, Loader2, Undo2, Redo2,
 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -31,37 +31,11 @@ import {
   type ConflictRange, type SidePaneConflict,
 } from "./cm/conflictExt";
 import { makeReadonlyEditor, makeEditableEditor } from "./cm/editor";
+import { undo, redo, undoDepth, redoDepth } from "@codemirror/commands";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
 const LINE_H = 20;
-
-// ── History stack for conflict states ─────────────────────────────────────────
-
-class ConflictHistory {
-  private stack: string[] = [];
-  private idx = -1;
-  private readonly limit = 100;
-
-  push(doc: string) {
-    this.stack = this.stack.slice(0, this.idx + 1);
-    this.stack.push(doc);
-    if (this.stack.length > this.limit) this.stack.shift();
-    this.idx = this.stack.length - 1;
-  }
-
-  undo(): string | null {
-    if (this.idx <= 0) return null;
-    this.idx--;
-    return this.stack[this.idx];
-  }
-
-  redo(): string | null {
-    if (this.idx >= this.stack.length - 1) return null;
-    this.idx++;
-    return this.stack[this.idx];
-  }
-}
 
 // ── ThreePaneEditor ───────────────────────────────────────────────────────────
 
@@ -88,7 +62,8 @@ export function ThreePaneEditor({
   const [centerDoc, setCenterDoc] = useState(content.merged);
   const [activeConflict, setActiveConflict] = useState(0);
   const [staging, setStaging] = useState(false);
-  const histRef = useRef(new ConflictHistory());
+  const [canUndo, setCanUndo] = useState(false);
+  const [canRedo, setCanRedo]  = useState(false);
 
   // Initial segment parse for ours/theirs line ranges (fixed at load time)
   const segs = useMemo(() => parseSegments(content.merged), [content.merged]);
@@ -242,7 +217,6 @@ export function ThreePaneEditor({
       centerConflictPlugin,
     ], (doc) => {
       setCenterDoc(doc);
-      histRef.current.push(doc);
       updateConflictStates(doc);
     });
 
@@ -254,8 +228,6 @@ export function ThreePaneEditor({
       sidePanePlugin,
     ]);
 
-    // Push initial history entry
-    histRef.current.push(content.merged);
     updateConflictStates(content.merged);
 
     return () => {
@@ -426,10 +398,30 @@ export function ThreePaneEditor({
     }
   };
 
+  // ── Update undo/redo availability ─────────────────────────────────────────
+  useEffect(() => {
+    const cv = centerView.current;
+    if (!cv) return;
+    setCanUndo(undoDepth(cv.state) > 0);
+    setCanRedo(redoDepth(cv.state) > 0);
+  }, [centerDoc]);
+
   // ── Keyboard shortcuts ────────────────────────────────────────────────────
   useEffect(() => {
     const h = (e: KeyboardEvent) => {
       const mod = e.ctrlKey || e.metaKey;
+      if (mod && e.key === "z" && !e.shiftKey) {
+        e.preventDefault();
+        const cv = centerView.current;
+        if (cv) undo(cv);
+        return;
+      }
+      if (mod && (e.key === "y" || (e.key === "z" && e.shiftKey))) {
+        e.preventDefault();
+        const cv = centerView.current;
+        if (cv) redo(cv);
+        return;
+      }
       if (mod && e.key === "ArrowDown") { e.preventDefault(); goToNextUnresolved(); }
       if (mod && e.key === "ArrowUp")   { e.preventDefault(); goToConflict(activeConflict - 1); }
     };
@@ -469,6 +461,25 @@ export function ThreePaneEditor({
       {/* Toolbar */}
       <div className="flex items-center gap-2 px-4 py-2 border-b border-border bg-card shrink-0 flex-wrap">
         <span className="text-xs text-muted-foreground truncate flex-1 min-w-0 font-mono">{filePath}</span>
+
+        <div className="flex items-center gap-0.5 shrink-0">
+          <button
+            onClick={() => { const cv = centerView.current; if (cv) undo(cv); }}
+            disabled={!canUndo}
+            title="Undo (Ctrl+Z)"
+            className="p-1 rounded text-muted-foreground hover:text-foreground disabled:opacity-30 hover:bg-accent/30 transition-colors"
+          >
+            <Undo2 size={12} />
+          </button>
+          <button
+            onClick={() => { const cv = centerView.current; if (cv) redo(cv); }}
+            disabled={!canRedo}
+            title="Redo (Ctrl+Y)"
+            className="p-1 rounded text-muted-foreground hover:text-foreground disabled:opacity-30 hover:bg-accent/30 transition-colors"
+          >
+            <Redo2 size={12} />
+          </button>
+        </div>
 
         {total > 1 && (
           <div className="flex items-center gap-1 shrink-0">

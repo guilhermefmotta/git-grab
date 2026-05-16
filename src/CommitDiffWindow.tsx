@@ -122,6 +122,18 @@ export default function CommitDiffWindow({ hash }: Props) {
               <button
                 key={f.path}
                 onClick={() => setSelectedFile(f.path)}
+                onDoubleClick={() => {
+                  if (!meta) return;
+                  const key = `commit_${meta.hash}_${f.path.replace(/[^a-zA-Z0-9_\-]/g, "_")}`;
+                  localStorage.setItem(`git_rust_filediff_${key}`, JSON.stringify({
+                    repoPath: meta.repoPath,
+                    filePath: f.path,
+                    staged: false,
+                    commitHash: meta.hash,
+                    shortHash: meta.shortHash,
+                  }));
+                  git.openFileDiffWindow(key, `${meta.shortHash} — ${f.path}`).catch(() => {});
+                }}
                 className={cn(
                   "w-full text-left px-3 py-1.5 text-xs truncate transition-colors",
                   selectedFile === f.path

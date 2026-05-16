@@ -78,11 +78,11 @@ function FileRow({
         </div>
       </ContextMenuTrigger>
       <ContextMenuContent>
-        {onStage && <ContextMenuItem onClick={onStage}>Stage file</ContextMenuItem>}
-        {onUnstage && <ContextMenuItem onClick={onUnstage}>Unstage file</ContextMenuItem>}
+        {onStage && <ContextMenuItem data-testid="file-stage-menuitem" onClick={onStage}>Stage file</ContextMenuItem>}
+        {onUnstage && <ContextMenuItem data-testid="file-unstage-menuitem" onClick={onUnstage}>Unstage file</ContextMenuItem>}
         {(onStage || onUnstage) && <ContextMenuSeparator />}
         {onOpenEditor && (
-          <ContextMenuItem data-testid="file-open-editor-menuitem" onClick={onOpenEditor}>Open in editor</ContextMenuItem>
+          <ContextMenuItem data-testid="file-open-editor-menuitem" onClick={onOpenEditor}>View diff</ContextMenuItem>
         )}
         {onShowInFolder && (
           <ContextMenuItem data-testid="file-show-folder-menuitem" onClick={onShowInFolder}>Show in folder</ContextMenuItem>
@@ -119,11 +119,13 @@ function SectionLabel({
   count,
   onAll,
   allLabel,
+  btnTestId,
 }: {
   label: string;
   count: number;
   onAll?: () => void;
   allLabel?: string;
+  btnTestId?: string;
 }) {
   return (
     <div className="flex items-center justify-between px-3 py-1.5">
@@ -133,6 +135,7 @@ function SectionLabel({
       {onAll && count > 0 && (
         <button
           onClick={onAll}
+          data-testid={btnTestId}
           className="text-[10px] text-primary hover:text-primary/80 transition-colors"
         >
           {allLabel}
@@ -184,6 +187,31 @@ export function WorkingTree() {
     }
   };
 
+  const selectConflictFile = async (path: string) => {
+    if (!activeRepo) return;
+    setSelectedFilePath(path);
+    setLoadingDiff(true);
+    try {
+      const content = await git.getFileContent(activeRepo.path, path);
+      const lines = content.split("\n");
+      let inOurs = false, inTheirs = false;
+      const diffLines = lines.map((raw, i) => {
+        let line_type: "add" | "delete" | "context" | "header" = "context";
+        if (raw.startsWith("<<<<<<<")) { line_type = "header"; inOurs = true; inTheirs = false; }
+        else if (raw.startsWith("=======")) { line_type = "header"; inOurs = false; inTheirs = true; }
+        else if (raw.startsWith(">>>>>>>")) { line_type = "header"; inOurs = false; inTheirs = false; }
+        else if (inOurs) { line_type = "delete"; }
+        else if (inTheirs) { line_type = "add"; }
+        return { content: raw, line_type, old_lineno: i + 1, new_lineno: i + 1 };
+      });
+      setDiff([{ path, hunks: [{ header: `Conflict — ${path}`, lines: diffLines }] }]);
+    } catch {
+      setDiff([]);
+    } finally {
+      setLoadingDiff(false);
+    }
+  };
+
   const commit = async () => {
     if (!activeRepo || !commitMsg.trim() || staged.length === 0) return;
     setCommitting(true);
@@ -198,13 +226,17 @@ export function WorkingTree() {
     }
   };
 
-  const handleOpenEditor = async (filePath: string) => {
+  const handleOpenDiff = (filePath: string, staged: boolean, conflicted = false) => {
     if (!activeRepo) return;
-    try {
-      await git.openInEditor(`${activeRepo.path}/${filePath}`);
-    } catch (e) {
-      toast.error(String(e));
-    }
+    const prefix = conflicted ? "conflict" : staged ? "staged" : "unstaged";
+    const key = `wt_${prefix}_${filePath.replace(/[^a-zA-Z0-9_\-]/g, "_")}`;
+    localStorage.setItem(`git_rust_filediff_${key}`, JSON.stringify({
+      repoPath: activeRepo.path,
+      filePath,
+      staged,
+      conflicted,
+    }));
+    git.openFileDiffWindow(key, filePath).catch(() => {});
   };
 
   const handleShowInFolder = async (filePath: string) => {
@@ -272,9 +304,9 @@ export function WorkingTree() {
                 icon={AlertTriangle}
                 iconClass="text-destructive"
                 selected={selectedFilePath === f.path}
-                onClick={() => {}}
-                onDoubleClick={() => handleOpenEditor(f.path)}
-                onOpenEditor={() => handleOpenEditor(f.path)}
+                onClick={() => selectConflictFile(f.path)}
+                onDoubleClick={() => handleOpenDiff(f.path, false, true)}
+                onOpenEditor={() => handleOpenDiff(f.path, false, true)}
                 onShowInFolder={() => handleShowInFolder(f.path)}
                 testId={`worktree-file-${f.path.replace(/\//g, "-")}`}
               />
@@ -288,6 +320,7 @@ export function WorkingTree() {
           count={staged.length}
           onAll={unstageAll}
           allLabel="Unstage all"
+          btnTestId="unstage-all-btn"
         />
         {staged.map((f) => (
           <FileRow
@@ -297,11 +330,11 @@ export function WorkingTree() {
             iconClass="text-green-400"
             selected={selectedFilePath === f.path}
             onClick={() => selectFile(f.path, true)}
-            onDoubleClick={() => handleOpenEditor(f.path)}
+            onDoubleClick={() => handleOpenDiff(f.path, true)}
             action="−"
             onAction={() => unstageFile(f.path)}
             onUnstage={() => unstageFile(f.path)}
-            onOpenEditor={() => handleOpenEditor(f.path)}
+            onOpenEditor={() => handleOpenDiff(f.path, true)}
             onShowInFolder={() => handleShowInFolder(f.path)}
             testId={`worktree-file-${f.path.replace(/\//g, "-")}`}
           />
@@ -313,6 +346,7 @@ export function WorkingTree() {
           count={unstaged.length}
           onAll={stageAll}
           allLabel="Stage all"
+          btnTestId="stage-all-btn"
         />
         {unstaged.map((f) => (
           <FileRow
@@ -322,12 +356,12 @@ export function WorkingTree() {
             iconClass="text-yellow-400"
             selected={selectedFilePath === f.path}
             onClick={() => selectFile(f.path, false)}
-            onDoubleClick={() => handleOpenEditor(f.path)}
+            onDoubleClick={() => handleOpenDiff(f.path, false)}
             action="+"
             onAction={() => stageFile(f.path)}
             onStage={() => stageFile(f.path)}
             onDiscard={() => setConfirmDiscard(f.path)}
-            onOpenEditor={() => handleOpenEditor(f.path)}
+            onOpenEditor={() => handleOpenDiff(f.path, false)}
             onShowInFolder={() => handleShowInFolder(f.path)}
             testId={`worktree-file-${f.path.replace(/\//g, "-")}`}
           />
@@ -345,11 +379,11 @@ export function WorkingTree() {
                 iconClass="text-muted-foreground"
                 selected={selectedFilePath === f.path}
                 onClick={() => selectFile(f.path, false)}
-                onDoubleClick={() => handleOpenEditor(f.path)}
+                onDoubleClick={() => handleOpenDiff(f.path, false)}
                 action="+"
                 onAction={() => stageFile(f.path)}
                 onStage={() => stageFile(f.path)}
-                onOpenEditor={() => handleOpenEditor(f.path)}
+                onOpenEditor={() => handleOpenDiff(f.path, false)}
                 onShowInFolder={() => handleShowInFolder(f.path)}
                 onIgnore={() => handleIgnoreFile(f.path)}
                 testId={`worktree-file-${f.path.replace(/\//g, "-")}`}
@@ -367,6 +401,7 @@ export function WorkingTree() {
       {/* Commit form */}
       <div className="border-t border-border p-3 shrink-0">
         <textarea
+          data-testid="commit-message-textarea"
           value={commitMsg}
           onChange={(e) => setCommitMsg(e.target.value)}
           placeholder="Commit message…"
@@ -377,6 +412,7 @@ export function WorkingTree() {
           }}
         />
         <button
+          data-testid="commit-btn"
           onClick={commit}
           disabled={!commitMsg.trim() || staged.length === 0 || committing}
           className="w-full bg-primary text-primary-foreground text-xs py-1.5 rounded font-medium disabled:opacity-40 disabled:cursor-not-allowed hover:bg-primary/90 transition-colors"

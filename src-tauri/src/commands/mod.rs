@@ -1,4 +1,5 @@
 pub mod branch;
+pub mod forge;
 pub mod commit;
 pub mod diff;
 pub mod log;

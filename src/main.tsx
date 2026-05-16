@@ -5,6 +5,8 @@ import App from "./App";
 import CommitDiffWindow from "./CommitDiffWindow";
 import FileDiffWindow from "./FileDiffWindow";
 import MergeWindow from "./MergeWindow";
+import ForgeWindow from "./ForgeWindow";
+import { useApplySettings } from "./hooks/useApplySettings";
 import "./index.css";
 
 attachConsole();
@@ -16,9 +18,11 @@ const key  = params.get("key");
 const repoPath = params.get("repoPath");
 
 function Root() {
+  useApplySettings(); // reads localStorage and applies theme + zoom on every view
   if (view === "commit" && hash) return <CommitDiffWindow hash={hash} />;
   if (view === "filediff" && key) return <FileDiffWindow storageKey={key} />;
   if (view === "merge" && repoPath) return <MergeWindow repoPath={decodeURIComponent(repoPath)} />;
+  if (view === "forge" && repoPath) return <ForgeWindow repoPath={decodeURIComponent(repoPath)} />;
   return <App />;
 }
 

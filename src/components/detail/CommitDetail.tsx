@@ -87,7 +87,20 @@ export function CommitDetail({ commit }: { commit: CommitInfo }) {
             {diff.map((f) => (
               <div
                 key={f.path}
+                data-testid={`commit-file-${f.path.replace(/\//g, "-")}`}
                 onClick={() => setSelectedFilePath(f.path === selectedFilePath ? null : f.path)}
+                onDoubleClick={() => {
+                if (!activeRepo) return;
+                const key = `commit_${commit.hash}_${f.path.replace(/[^a-zA-Z0-9_\-]/g, "_")}`;
+                localStorage.setItem(`git_rust_filediff_${key}`, JSON.stringify({
+                  repoPath: activeRepo.path,
+                  filePath: f.path,
+                  staged: false,
+                  commitHash: commit.hash,
+                  shortHash: commit.short_hash,
+                }));
+                git.openFileDiffWindow(key, `${commit.short_hash} — ${f.path}`).catch(() => {});
+              }}
                 className={`px-3 py-1 text-xs cursor-pointer transition-colors ${
                   selectedFilePath === f.path ? "bg-primary/15" : "hover:bg-accent"
                 }`}

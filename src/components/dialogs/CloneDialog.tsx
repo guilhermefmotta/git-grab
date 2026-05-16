@@ -64,6 +64,7 @@ export function CloneDialog({ open: isOpen, onClose }: Props) {
           <div>
             <label className="block text-xs text-muted-foreground mb-1">Repository URL</label>
             <input
+              data-testid="clone-url-input"
               type="text"
               value={url}
               onChange={(e) => setUrl(e.target.value)}
@@ -96,6 +97,7 @@ export function CloneDialog({ open: isOpen, onClose }: Props) {
 
         <DialogFooter className="gap-2">
           <button
+            data-testid="clone-cancel-btn"
             onClick={onClose}
             disabled={cloning}
             className="px-3 py-1.5 text-xs bg-secondary text-secondary-foreground rounded hover:bg-secondary/80 transition-colors"

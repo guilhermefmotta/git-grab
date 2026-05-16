@@ -144,6 +144,7 @@ function CommitRow({
     <ContextMenu>
       <ContextMenuTrigger asChild>
         <div
+          data-testid={`commit-row-${commit.short_hash}`}
           onClick={onClick}
           onDoubleClick={onDoubleClick}
           className={cn(

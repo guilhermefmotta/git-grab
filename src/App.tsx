@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { applySettings } from "@/hooks/useApplySettings";
 import { Toaster } from "sonner";
 import { useAppStore } from "@/store/appStore";
 import { TopToolbar } from "@/components/layout/TopToolbar";
@@ -151,8 +152,7 @@ export default function App() {
   const [detailWidth, setDetailWidth]     = useState(320);
 
   useEffect(() => {
-    document.documentElement.classList.toggle("light", settings.theme === "light");
-    document.body.style.fontSize = `${settings.fontSize}px`;
+    applySettings(settings.theme, settings.fontSize);
   }, [settings.theme, settings.fontSize]);
 
   const refreshMergeStatus = useCallback(async () => {

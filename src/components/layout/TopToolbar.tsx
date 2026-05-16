@@ -14,6 +14,7 @@ import {
   GitFork,
   Settings,
   ChevronDown,
+  GitPullRequest,
 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -27,6 +28,112 @@ import { CloneDialog } from "@/components/dialogs/CloneDialog";
 import { BranchDialog } from "@/components/dialogs/BranchDialog";
 import { MergeDialog } from "@/components/dialogs/MergeDialog";
 import { ConfirmDialog } from "@/components/dialogs/ConfirmDialog";
+
+interface RepoInfo { path: string; name: string }
+
+function RepoDropdown({
+  repos, activeRepoIndex, onSelect, onClose, onOpen,
+}: {
+  repos: RepoInfo[];
+  activeRepoIndex: number;
+  onSelect: (i: number) => void;
+  onClose: (path: string) => void;
+  onOpen: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState("");
+  const ref = useRef<HTMLDivElement>(null);
+  const searchRef = useRef<HTMLInputElement>(null);
+  const active = repos[activeRepoIndex];
+
+  useEffect(() => {
+    if (!open) { setQuery(""); return; }
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener("mousedown", handler);
+    setTimeout(() => searchRef.current?.focus(), 0);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [open]);
+
+  const filtered = query.trim()
+    ? repos.filter((r) => r.name.toLowerCase().includes(query.toLowerCase()))
+    : repos;
+
+  return (
+    <div ref={ref} className="relative flex items-center border-r border-border px-2 shrink-0">
+      <button
+        onClick={() => setOpen((v) => !v)}
+        className="flex items-center gap-1.5 px-2 py-1.5 rounded text-xs text-muted-foreground hover:text-foreground hover:bg-accent transition-colors max-w-[180px]"
+      >
+        <Folder size={12} className="shrink-0" />
+        <span className="truncate">{active?.name ?? "No repo"}</span>
+        <ChevronDown size={11} className="shrink-0 ml-0.5" />
+      </button>
+      <button
+        onClick={onOpen}
+        className="text-muted-foreground hover:text-foreground p-1.5 rounded hover:bg-accent transition-colors"
+        title="Open repo"
+      >
+        <Plus size={13} />
+      </button>
+      {open && (
+        <div className="absolute top-full left-0 mt-1 bg-popover border border-border rounded shadow-xl z-50 w-64 py-1 flex flex-col">
+          {/* Search */}
+          <div className="px-2 pb-1">
+            <input
+              ref={searchRef}
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Filter repos…"
+              className="w-full bg-background border border-border rounded px-2 py-1 text-xs text-foreground placeholder:text-muted-foreground outline-none focus:border-primary"
+            />
+          </div>
+          <div className="border-t border-border mb-1" />
+          {/* Repo list */}
+          <div className="max-h-60 overflow-y-auto">
+            {filtered.length === 0 && (
+              <p className="px-3 py-2 text-xs text-muted-foreground">No repos match</p>
+            )}
+            {filtered.map((repo) => {
+              const i = repos.indexOf(repo);
+              return (
+                <div
+                  key={repo.path}
+                  className={cn(
+                    "flex items-center gap-2 px-3 py-1.5 text-xs cursor-pointer transition-colors group",
+                    i === activeRepoIndex
+                      ? "bg-accent text-foreground"
+                      : "text-muted-foreground hover:bg-accent hover:text-foreground"
+                  )}
+                  onClick={() => { onSelect(i); setOpen(false); }}
+                >
+                  <Folder size={11} className="shrink-0" />
+                  <span className="flex-1 truncate" title={repo.path}>{repo.name}</span>
+                  <button
+                    onClick={(e) => { e.stopPropagation(); onClose(repo.path); }}
+                    className="opacity-0 group-hover:opacity-100 hover:text-destructive transition-opacity ml-1 shrink-0"
+                    title="Close"
+                  >
+                    ×
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+          <div className="border-t border-border mt-1" />
+          <button
+            onClick={() => { setOpen(false); onOpen(); }}
+            className="flex items-center gap-2 w-full px-3 py-1.5 text-xs text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
+          >
+            <Plus size={11} />
+            Open another repo…
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
 
 function ToolbarButton({
   icon: Icon,
@@ -253,40 +360,14 @@ export function TopToolbar({ onOpenSettings }: Props) {
 
   return (
     <div className="flex items-stretch border-b border-border bg-card h-14 shrink-0">
-      {/* Repo tabs */}
-      <div className="flex items-end px-2 gap-1 border-r border-border min-w-0 max-w-xs overflow-x-auto">
-        {repos.map((repo, i) => (
-          <div
-            key={repo.path}
-            onClick={() => setActiveRepoIndex(i)}
-            className={cn(
-              "flex items-center gap-1.5 px-3 py-1 rounded-t text-xs cursor-pointer transition-colors shrink-0",
-              i === activeRepoIndex
-                ? "bg-background text-foreground border border-b-0 border-border"
-                : "text-muted-foreground hover:text-foreground"
-            )}
-          >
-            <Folder size={12} />
-            <span className="max-w-[100px] truncate">{repo.name}</span>
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                removeRepo(repo.path);
-              }}
-              className="ml-1 hover:text-destructive"
-            >
-              ×
-            </button>
-          </div>
-        ))}
-        <button
-          onClick={openRepo}
-          className="text-muted-foreground hover:text-foreground px-2 py-1 text-xs"
-          title="Open repo"
-        >
-          <Plus size={14} />
-        </button>
-      </div>
+      {/* Repo dropdown */}
+      <RepoDropdown
+        repos={repos}
+        activeRepoIndex={activeRepoIndex}
+        onSelect={setActiveRepoIndex}
+        onClose={removeRepo}
+        onOpen={openRepo}
+      />
 
       {/* Undo / Redo */}
       <div className="flex items-center px-2 gap-1 border-r border-border">
@@ -372,6 +453,12 @@ export function TopToolbar({ onOpenSettings }: Props) {
           label="Pop"
           onClick={popStash}
           disabled={disabled || stashes.length === 0}
+        />
+        <ToolbarButton
+          icon={GitPullRequest}
+          label="Forge"
+          onClick={() => activeRepo && git.openForgeWindow(activeRepo.path).catch(() => {})}
+          disabled={!activeRepo}
         />
       </div>
 

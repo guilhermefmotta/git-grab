@@ -1,5 +1,4 @@
 import { invoke } from "@tauri-apps/api/core";
-import { open as shellOpen } from "@tauri-apps/plugin-shell";
 import type {
   RepoInfo,
   CommitInfo,
@@ -134,6 +133,28 @@ export const git = {
     invoke<void>("write_file_content", { repoPath, filePath, content }),
 
   // Shell
-  openInEditor: (filePath: string) => shellOpen(filePath),
-  showInFolder: (dirPath: string) => shellOpen(dirPath),
+  openInEditor: (filePath: string) => invoke<void>("open_path", { path: filePath }),
+  showInFolder: (dirPath: string) => invoke<void>("open_path", { path: dirPath }),
+
+  // Forge (GitHub / GitLab)
+  openForgeWindow: (repoPath: string) =>
+    invoke<void>("open_forge_window", { repoPath }),
+  detectForge: (repoPath: string) =>
+    invoke<import("./forgeTypes").ForgeInfo>("detect_forge", { repoPath }),
+  saveForgeToken: (platform: string, token: string) =>
+    invoke<void>("save_forge_token", { platform, token }),
+  getPullRequests: (repoPath: string) =>
+    invoke<import("./forgeTypes").PullRequest[]>("get_pull_requests", { repoPath }),
+  getPipelines: (repoPath: string) =>
+    invoke<import("./forgeTypes").Pipeline[]>("get_pipelines", { repoPath }),
+  getPrComments: (repoPath: string, prNumber: number) =>
+    invoke<import("./forgeTypes").PrComment[]>("get_pr_comments", { repoPath, prNumber }),
+  postPrComment: (repoPath: string, prNumber: number, body: string) =>
+    invoke<void>("post_pr_comment", { repoPath, prNumber, body }),
+  triggerPipeline: (repoPath: string, refName: string) =>
+    invoke<void>("trigger_pipeline", { repoPath, refName }),
+  getPipelineJobs: (repoPath: string, pipelineId: number) =>
+    invoke<import("./forgeTypes").PipelineJob[]>("get_pipeline_jobs", { repoPath, pipelineId }),
+  retryPipelineJob: (repoPath: string, jobId: number) =>
+    invoke<void>("retry_pipeline_job", { repoPath, jobId }),
 };

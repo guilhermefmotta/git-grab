@@ -116,6 +116,7 @@ export function MergeDialog({ open, onClose, onRefresh }: Props) {
                 <GitBranch size={12} className="text-muted-foreground shrink-0" />
                 <input
                   ref={inputRef}
+                  data-testid="merge-branch-input"
                   type="text"
                   value={query}
                   onChange={e => {
@@ -198,6 +199,7 @@ export function MergeDialog({ open, onClose, onRefresh }: Props) {
 
         <DialogFooter className="gap-2">
           <button
+            data-testid="merge-cancel-btn"
             onClick={onClose}
             disabled={merging}
             className="px-3 py-1.5 text-xs bg-secondary text-secondary-foreground rounded hover:bg-secondary/80 transition-colors"
@@ -205,6 +207,7 @@ export function MergeDialog({ open, onClose, onRefresh }: Props) {
             Cancel
           </button>
           <button
+            data-testid="merge-btn"
             onClick={handleMerge}
             disabled={!displayName || merging}
             className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-primary text-primary-foreground rounded hover:bg-primary/90 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"

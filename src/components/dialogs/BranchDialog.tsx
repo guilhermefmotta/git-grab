@@ -52,6 +52,7 @@ export function BranchDialog({ open: isOpen, onClose, fromHash, fromLabel }: Pro
           <div>
             <label className="block text-xs text-muted-foreground mb-1">Branch name</label>
             <input
+              data-testid="branch-name-input"
               type="text"
               value={name}
               onChange={(e) => setName(e.target.value)}
@@ -75,6 +76,7 @@ export function BranchDialog({ open: isOpen, onClose, fromHash, fromLabel }: Pro
 
         <DialogFooter className="gap-2">
           <button
+            data-testid="branch-cancel-btn"
             onClick={onClose}
             disabled={creating}
             className="px-3 py-1.5 text-xs bg-secondary text-secondary-foreground rounded hover:bg-secondary/80 transition-colors"
@@ -82,6 +84,7 @@ export function BranchDialog({ open: isOpen, onClose, fromHash, fromLabel }: Pro
             Cancel
           </button>
           <button
+            data-testid="branch-create-btn"
             onClick={handleCreate}
             disabled={!name.trim() || creating}
             className="px-3 py-1.5 text-xs bg-primary text-primary-foreground rounded hover:bg-primary/90 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
