@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { EditorView, gutter, GutterMarker } from "@codemirror/view";
+import { EditorView, lineNumbers } from "@codemirror/view";
 import { EditorState, StateField, StateEffect, RangeSetBuilder } from "@codemirror/state";
 import { Decoration, DecorationSet } from "@codemirror/view";
 import { appTheme, appHighlight } from "@/components/merge/cm/theme";
@@ -49,31 +49,6 @@ function buildRows(lines: DiffLine[]): Row[] {
   return rows;
 }
 
-// ── CodeMirror line-number gutter ────────────────────────────────────────────
-
-class LineNoMarker extends GutterMarker {
-  constructor(private n: number | null) { super(); }
-  toDOM() {
-    const el = document.createElement("span");
-    el.textContent = this.n !== null ? String(this.n) : "";
-    return el;
-  }
-  eq(other: GutterMarker) {
-    return other instanceof LineNoMarker && other.n === this.n;
-  }
-}
-
-function lineNumGutter(lineNos: (number | null)[]) {
-  return gutter({
-    class: "cm-diff-gutter",
-    lineMarker(view, line) {
-      const idx = view.state.doc.lineAt(line.from).number - 1;
-      return idx < lineNos.length ? new LineNoMarker(lineNos[idx]) : null;
-    },
-    initialSpacer: () => new LineNoMarker(999),
-  });
-}
-
 // ── Static decoration StateField ──────────────────────────────────────────────
 
 const setDecos = StateEffect.define<DecorationSet>();
@@ -90,18 +65,19 @@ const staticDecoField = StateField.define<DecorationSet>({
 // ── Diff theme extension ───────────────────────────────────────────────────────
 
 const diffTheme = EditorView.theme({
-  ".cm-diff-gutter .cm-gutterElement": {
+  ".cm-lineNumbers .cm-gutterElement": {
     minWidth: "40px",
     textAlign: "right",
-    padding: "0 4px",
+    padding: "0 6px",
     color: "hsl(220 10% 45%)",
     fontSize: "10px",
     lineHeight: "20px",
     userSelect: "none",
   },
-  ".cm-diff-gutter": {
+  ".cm-lineNumbers": {
     borderRight: "1px solid hsl(217 32% 17%)",
     background: "hsl(222 47% 10%)",
+    minWidth: "44px",
   },
   ".cm-diff-delete": { background: "rgba(239,68,68,.15)", borderLeft: "2px solid rgba(239,68,68,.4)" },
   ".cm-diff-add":    { background: "rgba(34,197,94,.13)", borderLeft: "2px solid rgba(34,197,94,.35)" },
@@ -200,7 +176,12 @@ function HunkView({ rows, filePath, header, lines, onStageHunk, onUnstageHunk }:
           appHighlight,
           EditorState.readOnly.of(true),
           staticDecoField.init(() => decos),
-          lineNumGutter(lineNos),
+          lineNumbers({
+            formatNumber: (lineNo) => {
+              const n = lineNos[lineNo - 1];
+              return n != null ? String(n) : "·";
+            },
+          }),
           ...extraExts,
         ],
       }),
